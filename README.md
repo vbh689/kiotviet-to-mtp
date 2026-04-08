@@ -2,7 +2,12 @@
 
 ## Tổng quan
 
-Script Python dùng để chuyển dữ liệu sản phẩm xuất từ KiotViet sang các file import của MTP.
+Script Python dùng để chuyển dữ liệu xuất từ KiotViet sang các file import của MTP:
+
+- Sản phẩm
+- Khách hàng
+- Nhà cung cấp
+- Công nợ đầu kỳ KH/NCC
 
 ## Cài đặt
 
@@ -21,7 +26,27 @@ pip install xlrd xlwt openpyxl
 
 ## Sử dụng
 
-Chạy script với file KiotViet:
+Chạy script với một hoặc nhiều file KiotViet:
 
 ```bash
-python kiotviet_to_mtp.py --kiotviet /duong-dan/toi-file.xlsx
+python kiotviet_to_mtp.py --kiotviet /duong-dan/DanhSachSanPham.xlsx
+python kiotviet_to_mtp.py --kiotviet /duong-dan/DanhSachKhachHang.xlsx /duong-dan/DanhSachNhaCungCap.xlsx
+python kiotviet_to_mtp.py --kiotviet /duong-dan/DanhSachSanPham.xlsx /duong-dan/DanhSachKhachHang.xlsx /duong-dan/DanhSachNhaCungCap.xlsx
+```
+
+Dùng `--outdir` để đổi thư mục xuất:
+
+```bash
+python kiotviet_to_mtp.py --kiotviet /duong-dan/DanhSachKhachHang.xlsx /duong-dan/DanhSachNhaCungCap.xlsx --outdir ./output
+```
+
+## File đầu ra
+
+Tùy theo loại file nguồn được truyền vào, script sẽ sinh các file tương ứng:
+
+- `MTP_SP-NganhHang-LoaiHang.xls`
+- `MTP_SP-NhomHang.xls`
+- `MTP_SP-SanPham.xls`
+- `MTP_SP-TonKhoDauKy.xls`
+- `MTP_KH-NCC.xls`
+- `MTP_KH-CongNoDauKy.xls`

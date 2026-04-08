@@ -12,9 +12,9 @@ from typing import Iterable
 
 import xlrd
 import xlwt
-from openpyxl import Workbook, load_workbook
+from openpyxl import load_workbook
 
-KIOTVIET_HEADER_ALIASES = {
+PRODUCT_HEADER_ALIASES = {
     "loai_hang": ["Loại hàng"],
     "nhom_hang": ["Nhóm hàng(3 Cấp)", "Nhóm hàng (3 Cấp)", "Nhóm hàng"],
     "ma_hang": ["Mã hàng"],
@@ -25,6 +25,48 @@ KIOTVIET_HEADER_ALIASES = {
     "don_vi_tinh": ["ĐVT", "Đơn vị tính"],
 }
 
+CUSTOMER_HEADER_ALIASES = {
+    "ma_khach_hang": ["Mã khách hàng"],
+    "ten_khach_hang": ["Tên khách hàng"],
+    "dien_thoai": ["Điện thoại"],
+    "dia_chi": ["Địa chỉ"],
+    "no_can_thu_hien_tai": ["Nợ cần thu hiện tại"],
+}
+
+PROVIDER_HEADER_ALIASES = {
+    "ma_nha_cung_cap": ["Mã nhà cung cấp"],
+    "ten_nha_cung_cap": ["Tên nhà cung cấp"],
+    "email": ["Email"],
+    "dien_thoai": ["Điện thoại"],
+    "dia_chi": ["Địa chỉ"],
+    "no_can_tra_hien_tai": ["Nợ cần trả hiện tại"],
+}
+
+SOURCE_PREFIXES = {
+    "product": "DanhSachSanPham",
+    "customer": "DanhSachKhachHang",
+    "provider": "DanhSachNhaCungCap",
+}
+
+TEMPLATE_CANDIDATES = {
+    "product_nganh": ["MTP_SP-NganhHang-LoaiHang.xls", "MTP-NganhHang-LoaiHang.xls"],
+    "product_nhom": ["MTP_SP-NhomHang.xls", "MTP-NhomHang.xls"],
+    "product_sanpham": ["MTP_SP-SanPham.xls", "MTP-SanPham.xls"],
+    "product_tonkho": ["MTP_SP-TonKhoDauKy.xls", "Mau-TonKhoDauKy.xls"],
+    "kh_ncc": ["MTP_KH-NCC.xls"],
+    "kh_congno": ["MTP_KH-CongNoDauKy.xls"],
+}
+
+
+def clean_text(value) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        text = value.strip()
+    else:
+        text = str(value).strip()
+    return re.sub(r"\s+", " ", text)
+
 
 def normalize_header(value) -> str:
     text = clean_text(value)
@@ -33,7 +75,27 @@ def normalize_header(value) -> str:
     return re.sub(r"[^a-z0-9]+", "", text.casefold())
 
 
-def resolve_kiotviet_columns(headers: list[str]) -> dict[str, int]:
+def flatten_aliases(*alias_maps: dict[str, list[str]]) -> list[str]:
+    return sorted(
+        {
+            alias
+            for alias_map in alias_maps
+            for aliases in alias_map.values()
+            for alias in aliases
+        }
+    )
+
+
+KNOWN_PRODUCT_HEADERS = flatten_aliases(PRODUCT_HEADER_ALIASES)
+KNOWN_CUSTOMER_HEADERS = flatten_aliases(CUSTOMER_HEADER_ALIASES)
+KNOWN_PROVIDER_HEADERS = flatten_aliases(PROVIDER_HEADER_ALIASES)
+
+
+def resolve_columns(
+    headers: list[str],
+    aliases_map: dict[str, list[str]],
+    source_label: str,
+) -> dict[str, int]:
     normalized_headers = {
         normalize_header(header): idx + 1
         for idx, header in enumerate(headers)
@@ -42,7 +104,7 @@ def resolve_kiotviet_columns(headers: list[str]) -> dict[str, int]:
     resolved: dict[str, int] = {}
     missing: list[str] = []
 
-    for field, aliases in KIOTVIET_HEADER_ALIASES.items():
+    for field, aliases in aliases_map.items():
         match = None
         for alias in aliases:
             match = normalized_headers.get(normalize_header(alias))
@@ -54,26 +116,9 @@ def resolve_kiotviet_columns(headers: list[str]) -> dict[str, int]:
         resolved[field] = match
 
     if missing:
-        raise ValueError(
-            "Thiếu cột bắt buộc trong file KiotViet: " + "; ".join(missing)
-        )
+        raise ValueError(f"Thiếu cột bắt buộc trong file {source_label}: " + "; ".join(missing))
 
     return resolved
-
-
-KNOWN_KIOTVIET_HEADERS = sorted(
-    {alias for aliases in KIOTVIET_HEADER_ALIASES.values() for alias in aliases}
-)
-
-
-def clean_text(value) -> str:
-    if value is None:
-        return ""
-    if isinstance(value, str):
-        text = value.strip()
-    else:
-        text = str(value).strip()
-    return re.sub(r"\s+", " ", text)
 
 
 def slugify(value: str) -> str:
@@ -97,30 +142,67 @@ def make_unique_code(base: str, used: set[str], prefix: str = "") -> str:
         index += 1
 
 
-def read_kiotviet_rows(path: Path) -> tuple[list[str], list[dict[str, object]]]:
+def read_xlsx_headers(path: Path) -> list[str]:
+    wb = load_workbook(path, data_only=True, read_only=True)
+    try:
+        ws = wb.active
+        return [clean_text(c.value) for c in ws[1]]
+    finally:
+        wb.close()
+
+
+def read_mapped_xlsx_rows(
+    path: Path,
+    aliases_map: dict[str, list[str]],
+    source_label: str,
+    key_fields: tuple[str, ...],
+) -> tuple[list[str], list[dict[str, object]]]:
     wb = load_workbook(path, data_only=True)
-    ws = wb.active
-    headers = [clean_text(c.value) for c in ws[1]]
-    columns = resolve_kiotviet_columns(headers)
-    rows: list[dict[str, object]] = []
-    for row_idx in range(2, ws.max_row + 1):
-        ma_hang = ws.cell(row_idx, columns["ma_hang"]).value
-        ten_hang = ws.cell(row_idx, columns["ten_hang"]).value
-        if clean_text(ma_hang) == "" and clean_text(ten_hang) == "":
-            continue
-        rows.append(
-            {
-                "loai_hang": ws.cell(row_idx, columns["loai_hang"]).value,
-                "nhom_hang": ws.cell(row_idx, columns["nhom_hang"]).value,
-                "ma_hang": ma_hang,
-                "ten_hang": ten_hang,
-                "gia_ban": ws.cell(row_idx, columns["gia_ban"]).value,
-                "gia_von": ws.cell(row_idx, columns["gia_von"]).value,
-                "ton_kho": ws.cell(row_idx, columns["ton_kho"]).value,
-                "don_vi_tinh": ws.cell(row_idx, columns["don_vi_tinh"]).value,
+    try:
+        ws = wb.active
+        headers = [clean_text(c.value) for c in ws[1]]
+        columns = resolve_columns(headers, aliases_map, source_label)
+        rows: list[dict[str, object]] = []
+
+        for row_idx in range(2, ws.max_row + 1):
+            row = {
+                field: ws.cell(row_idx, col_idx).value
+                for field, col_idx in columns.items()
             }
-        )
-    return headers, rows
+            if all(clean_text(row[field]) == "" for field in key_fields):
+                continue
+            rows.append(row)
+
+        return headers, rows
+    finally:
+        wb.close()
+
+
+def read_kiotviet_rows(path: Path) -> tuple[list[str], list[dict[str, object]]]:
+    return read_mapped_xlsx_rows(
+        path,
+        PRODUCT_HEADER_ALIASES,
+        "KiotViet sản phẩm",
+        ("ma_hang", "ten_hang"),
+    )
+
+
+def read_customer_rows(path: Path) -> tuple[list[str], list[dict[str, object]]]:
+    return read_mapped_xlsx_rows(
+        path,
+        CUSTOMER_HEADER_ALIASES,
+        "KiotViet khách hàng",
+        ("ma_khach_hang", "ten_khach_hang"),
+    )
+
+
+def read_provider_rows(path: Path) -> tuple[list[str], list[dict[str, object]]]:
+    return read_mapped_xlsx_rows(
+        path,
+        PROVIDER_HEADER_ALIASES,
+        "KiotViet nhà cung cấp",
+        ("ma_nha_cung_cap", "ten_nha_cung_cap"),
+    )
 
 
 def read_xls_rows(path: Path) -> tuple[list[str], list[list[object]]]:
@@ -131,7 +213,12 @@ def read_xls_rows(path: Path) -> tuple[list[str], list[list[object]]]:
     return headers, rows[1:] if len(rows) > 1 else []
 
 
-def write_xls(path: Path, sheet_name: str, headers: list[str], rows: Iterable[Iterable[object]]) -> None:
+def write_xls(
+    path: Path,
+    sheet_name: str,
+    headers: list[str],
+    rows: Iterable[Iterable[object]],
+) -> None:
     wb = xlwt.Workbook()
     ws = wb.add_sheet(sheet_name)
     for c, value in enumerate(headers):
@@ -157,6 +244,54 @@ def to_number(value):
     return float(num)
 
 
+def to_number_or_default(value, default=0):
+    number = to_number(value)
+    if number is None:
+        return default
+    return number
+
+
+def detect_source_type(path: Path, headers: list[str]) -> str:
+    normalized_name = normalize_header(path.stem)
+    for source_type, prefix in SOURCE_PREFIXES.items():
+        if normalized_name.startswith(normalize_header(prefix)):
+            return source_type
+
+    normalized_headers = {normalize_header(header) for header in headers if clean_text(header)}
+    if {
+        normalize_header("Mã hàng"),
+        normalize_header("Tên hàng"),
+    }.issubset(normalized_headers):
+        return "product"
+    if {
+        normalize_header("Mã khách hàng"),
+        normalize_header("Tên khách hàng"),
+    }.issubset(normalized_headers):
+        return "customer"
+    if {
+        normalize_header("Mã nhà cung cấp"),
+        normalize_header("Tên nhà cung cấp"),
+    }.issubset(normalized_headers):
+        return "provider"
+
+    raise ValueError(
+        f"Không nhận diện được loại file: {path.name}. "
+        "Tên file nên bắt đầu bằng DanhSachSanPham, DanhSachKhachHang hoặc DanhSachNhaCungCap."
+    )
+
+
+def resolve_template_path(templates_dir: Path, candidates: list[str]) -> Path | None:
+    for name in candidates:
+        path = templates_dir / name
+        if path.exists():
+            return path
+    return None
+
+
+def normalize_row(row: list[object], width: int) -> list[object]:
+    return list(row[:width]) + [""] * max(0, width - len(row))
+
+
 def build_nganh_hang(loai_hang_values: list[str], existing_rows: list[list[object]]) -> list[list[object]]:
     result = []
     existing_names = set()
@@ -170,7 +305,7 @@ def build_nganh_hang(loai_hang_values: list[str], existing_rows: list[list[objec
             existing_names.add(name.casefold())
         if code:
             used_codes.add(code)
-        result.append(list(row[:3]) + [""] * max(0, 3 - len(row)))
+        result.append(normalize_row(row, 3))
 
     for value in loai_hang_values:
         name = clean_text(value)
@@ -196,7 +331,7 @@ def build_nhom_hang(nhom_hang_values: list[str], existing_rows: list[list[object
             existing_names.add(name.casefold())
         if code:
             used_codes.add(code)
-        normalized = list(row[:4]) + [""] * max(0, 4 - len(row))
+        normalized = normalize_row(row, 4)
         if clean_text(normalized[2]) == "":
             normalized[2] = "MD"
         result.append(normalized)
@@ -217,7 +352,7 @@ def build_san_pham(template_path: Path, output_path: Path, kiotviet_rows: list[d
     existing_codes = set()
 
     for row in existing_rows:
-        normalized = list(row[:31]) + [""] * max(0, 31 - len(row))
+        normalized = normalize_row(row, 31)
         ma_san_pham = clean_text(normalized[1]) if len(normalized) > 1 else ""
         ten_san_pham = clean_text(normalized[2]) if len(normalized) > 2 else ""
         dedupe_key = ma_san_pham.casefold() or ten_san_pham.casefold()
@@ -274,7 +409,7 @@ def build_ton_kho_dau_ky(template_path: Path, output_path: Path, kiotviet_rows: 
     existing_codes = set()
 
     for row in existing_rows:
-        normalized = list(row[:3]) + [""] * max(0, 3 - len(row))
+        normalized = normalize_row(row, 3)
         ma_san_pham = clean_text(normalized[0])
         if ma_san_pham:
             existing_codes.add(ma_san_pham.casefold())
@@ -306,11 +441,125 @@ def build_ton_kho_dau_ky(template_path: Path, output_path: Path, kiotviet_rows: 
     return added
 
 
+def build_kh_ncc(
+    template_path: Path,
+    output_path: Path,
+    customer_rows: list[dict[str, object]],
+    provider_rows: list[dict[str, object]],
+) -> int:
+    headers, existing_rows = read_xls_rows(template_path)
+    result = []
+
+    for row in existing_rows:
+        normalized = normalize_row(row, 13)
+        if any(clean_text(cell) for cell in normalized):
+            result.append(normalized)
+
+    added = 0
+
+    for item in customer_rows:
+        row = [""] * 13
+        row[0] = clean_text(item["ma_khach_hang"])
+        row[1] = clean_text(item["ten_khach_hang"])
+        row[2] = clean_text(item["dia_chi"])
+        row[4] = "KL"
+        row[5] = "TRUE"
+        row[7] = clean_text(item["dien_thoai"])
+        result.append(row)
+        added += 1
+
+    for item in provider_rows:
+        row = [""] * 13
+        row[0] = clean_text(item["ma_nha_cung_cap"])
+        row[1] = clean_text(item["ten_nha_cung_cap"])
+        row[2] = clean_text(item["dia_chi"])
+        row[4] = "NCC"
+        row[6] = "TRUE"
+        row[7] = clean_text(item["dien_thoai"])
+        row[8] = clean_text(item["email"])
+        result.append(row)
+        added += 1
+
+    write_xls(
+        output_path,
+        "Sheet1",
+        headers or [
+            "Mã KH-NCC",
+            "Tên KH-NCC",
+            "Địa chỉ",
+            "Nhân viên phụ trách",
+            "Nhóm KH-NCC",
+            "Khách hàng(x)",
+            "Nhà cung cấp(x)",
+            "Điện thoại",
+            "Email",
+            "Ghi chú",
+            "Điểm đầu kỳ",
+            "Mã số thuế",
+            "Ngày sinh nhật",
+        ],
+        result,
+    )
+    return added
+
+
+def build_kh_cong_no_dau_ky(
+    template_path: Path,
+    output_path: Path,
+    customer_rows: list[dict[str, object]],
+    provider_rows: list[dict[str, object]],
+) -> int:
+    headers, existing_rows = read_xls_rows(template_path)
+    result = []
+
+    for row in existing_rows:
+        normalized = normalize_row(row, 4)
+        if any(clean_text(cell) for cell in normalized):
+            result.append(normalized)
+
+    added = 0
+
+    for item in customer_rows:
+        row = [""] * 4
+        row[0] = clean_text(item["ma_khach_hang"])
+        row[2] = to_number_or_default(item["no_can_thu_hien_tai"], default=0)
+        row[3] = 0
+        result.append(row)
+        added += 1
+
+    for item in provider_rows:
+        row = [""] * 4
+        row[0] = clean_text(item["ma_nha_cung_cap"])
+        row[2] = 0
+        row[3] = to_number_or_default(item["no_can_tra_hien_tai"], default=0)
+        result.append(row)
+        added += 1
+
+    write_xls(
+        output_path,
+        "Sheet1",
+        headers or [
+            "Mã KH - NCC(*)",
+            "Tên KH - NCC",
+            "Số tiền phải thu (*)",
+            "Số tiền phải trả (*)",
+        ],
+        result,
+    )
+    return added
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Chuyển dữ liệu sản phẩm từ Excel KiotViet sang bộ file mẫu MTP."
+        description="Chuyển dữ liệu sản phẩm, khách hàng và nhà cung cấp từ Excel KiotViet sang bộ file mẫu MTP."
     )
-    parser.add_argument("--kiotviet", required=True, type=Path, help="File Excel KiotViet .xlsx")
+    parser.add_argument(
+        "--kiotviet",
+        required=True,
+        nargs="+",
+        type=Path,
+        help="Một hoặc nhiều file Excel KiotViet .xlsx",
+    )
     parser.add_argument(
         "--outdir",
         type=Path,
@@ -324,16 +573,68 @@ def main() -> int:
     args = parse_args()
     project_dir = Path(__file__).resolve().parent
     templates_dir = project_dir / "templates"
-    mtp_nganh = templates_dir / "MTP-NganhHang-LoaiHang.xls"
-    mtp_nhom = templates_dir / "MTP-NhomHang.xls"
-    mtp_sanpham = templates_dir / "MTP-SanPham.xls"
-    ton_kho_dau_ky = templates_dir / "Mau-TonKhoDauKy.xls"
 
-    missing_templates = [
-        path.name
-        for path in (mtp_nganh, mtp_nhom, mtp_sanpham, ton_kho_dau_ky)
-        if not path.exists()
-    ]
+    product_rows: list[dict[str, object]] = []
+    customer_rows: list[dict[str, object]] = []
+    provider_rows: list[dict[str, object]] = []
+    source_counts = {"product": 0, "customer": 0, "provider": 0}
+
+    for source_path in args.kiotviet:
+        if not source_path.exists():
+            print(f"Không tìm thấy file: {source_path}", file=sys.stderr)
+            return 1
+
+        source_type = "unknown"
+        try:
+            headers = read_xlsx_headers(source_path)
+            source_type = detect_source_type(source_path, headers)
+            if source_type == "product":
+                _, rows = read_kiotviet_rows(source_path)
+                product_rows.extend(rows)
+            elif source_type == "customer":
+                _, rows = read_customer_rows(source_path)
+                customer_rows.extend(rows)
+            else:
+                _, rows = read_provider_rows(source_path)
+                provider_rows.extend(rows)
+            source_counts[source_type] += 1
+        except ValueError as exc:
+            print(str(exc), file=sys.stderr)
+            if source_type == "product":
+                supported_headers = KNOWN_PRODUCT_HEADERS
+            elif source_type == "customer":
+                supported_headers = KNOWN_CUSTOMER_HEADERS
+            elif source_type == "provider":
+                supported_headers = KNOWN_PROVIDER_HEADERS
+            else:
+                supported_headers = flatten_aliases(
+                    PRODUCT_HEADER_ALIASES,
+                    CUSTOMER_HEADER_ALIASES,
+                    PROVIDER_HEADER_ALIASES,
+                )
+            print(
+                "Các tiêu đề đang hỗ trợ: " + ", ".join(supported_headers),
+                file=sys.stderr,
+            )
+            return 1
+
+    needs_product_outputs = bool(product_rows)
+    needs_partner_outputs = bool(customer_rows or provider_rows)
+
+    missing_templates: list[str] = []
+    resolved_templates: dict[str, Path] = {}
+
+    for key, candidates in TEMPLATE_CANDIDATES.items():
+        if key.startswith("product_") and not needs_product_outputs:
+            continue
+        if key.startswith("kh_") and not needs_partner_outputs:
+            continue
+        path = resolve_template_path(templates_dir, candidates)
+        if path is None:
+            missing_templates.append("/".join(candidates))
+            continue
+        resolved_templates[key] = path
+
     if missing_templates:
         print(
             "Thiếu file template trong thư mục templates/: "
@@ -344,43 +645,80 @@ def main() -> int:
 
     args.outdir.mkdir(parents=True, exist_ok=True)
 
-    try:
-        _, kv_rows = read_kiotviet_rows(args.kiotviet)
-    except ValueError as exc:
-        print(str(exc), file=sys.stderr)
-        print(
-            "Các tiêu đề đang hỗ trợ: " + ", ".join(KNOWN_KIOTVIET_HEADERS),
-            file=sys.stderr,
+    if needs_product_outputs:
+        mtp_nganh = resolved_templates["product_nganh"]
+        mtp_nhom = resolved_templates["product_nhom"]
+        mtp_sanpham = resolved_templates["product_sanpham"]
+        ton_kho_dau_ky = resolved_templates["product_tonkho"]
+
+        loai_hang_values = [clean_text(r["loai_hang"]) for r in product_rows]
+        nhom_hang_values = [clean_text(r["nhom_hang"]) for r in product_rows]
+        nganh_headers, nganh_existing = read_xls_rows(mtp_nganh)
+        nhom_headers, nhom_existing = read_xls_rows(mtp_nhom)
+        nganh_rows = build_nganh_hang(loai_hang_values, nganh_existing)
+        nhom_rows = build_nhom_hang(nhom_hang_values, nhom_existing)
+
+        out_nganh = args.outdir / mtp_nganh.name
+        out_nhom = args.outdir / mtp_nhom.name
+        out_sanpham = args.outdir / mtp_sanpham.name
+        out_ton_kho = args.outdir / ton_kho_dau_ky.name
+
+        write_xls(
+            out_nganh,
+            "Sheet2",
+            nganh_headers or ["Mã ngành", "Tên ngành", "Ghi chú"],
+            nganh_rows,
         )
-        return 1
-    loai_hang_values = [clean_text(r["loai_hang"]) for r in kv_rows]
-    nhom_hang_values = [clean_text(r["nhom_hang"]) for r in kv_rows]
+        write_xls(
+            out_nhom,
+            "Sheet2",
+            nhom_headers or ["Mã nhóm", "Tên nhóm", "Ngành hàng", "Ghi chú"],
+            nhom_rows,
+        )
+        san_pham_added = build_san_pham(mtp_sanpham, out_sanpham, product_rows)
+        ton_kho_added = build_ton_kho_dau_ky(ton_kho_dau_ky, out_ton_kho, product_rows)
 
-    nganh_headers, nganh_existing = read_xls_rows(mtp_nganh)
-    nhom_headers, nhom_existing = read_xls_rows(mtp_nhom)
+        print(f"Đã xuất: {out_nganh}")
+        print(f"Đã xuất: {out_nhom}")
+        print(f"Đã xuất: {out_sanpham}")
+        print(f"Đã xuất: {out_ton_kho}")
+        print(f"Số dòng sản phẩm thêm mới: {san_pham_added}")
+        print(f"Số dòng tồn kho đầu kỳ thêm mới: {ton_kho_added}")
+        print(f"Số ngành hàng duy nhất: {len(nganh_rows)}")
+        print(f"Số nhóm hàng duy nhất: {len(nhom_rows)}")
+        print(
+            "Ghi chú: cột C của MTP_SP-NhomHang được đặt cố định là 'MD'; "
+            "cột H/I của MTP_SP-SanPham lần lượt là 0 và 999999."
+        )
 
-    nganh_rows = build_nganh_hang(loai_hang_values, nganh_existing)
-    nhom_rows = build_nhom_hang(nhom_hang_values, nhom_existing)
+    if needs_partner_outputs:
+        kh_ncc_template = resolved_templates["kh_ncc"]
+        kh_congno_template = resolved_templates["kh_congno"]
+        out_kh_ncc = args.outdir / kh_ncc_template.name
+        out_kh_congno = args.outdir / kh_congno_template.name
+        kh_ncc_added = build_kh_ncc(kh_ncc_template, out_kh_ncc, customer_rows, provider_rows)
+        kh_congno_added = build_kh_cong_no_dau_ky(
+            kh_congno_template,
+            out_kh_congno,
+            customer_rows,
+            provider_rows,
+        )
 
-    out_nganh = args.outdir / "MTP-NganhHang-LoaiHang.xls"
-    out_nhom = args.outdir / "MTP-NhomHang.xls"
-    out_sanpham = args.outdir / "MTP-SanPham.xls"
-    out_ton_kho = args.outdir / "Mau-TonKhoDauKy.xls"
+        print(f"Đã xuất: {out_kh_ncc}")
+        print(f"Đã xuất: {out_kh_congno}")
+        print(f"Số dòng KH/NCC thêm mới: {kh_ncc_added}")
+        print(f"Số dòng công nợ đầu kỳ KH/NCC thêm mới: {kh_congno_added}")
+        print(
+            "Ghi chú: KH mặc định dùng nhóm 'KL' và cột Khách hàng(x) = TRUE; "
+            "NCC dùng nhóm 'NCC' và cột Nhà cung cấp(x) = TRUE."
+        )
 
-    write_xls(out_nganh, "Sheet2", nganh_headers or ["Mã ngành", "Tên ngành", "Ghi chú"], nganh_rows)
-    write_xls(out_nhom, "Sheet2", nhom_headers or ["Mã nhóm", "Tên nhóm", "Ngành hàng", "Ghi chú"], nhom_rows)
-    san_pham_added = build_san_pham(mtp_sanpham, out_sanpham, kv_rows)
-    ton_kho_added = build_ton_kho_dau_ky(ton_kho_dau_ky, out_ton_kho, kv_rows)
-
-    print(f"Đã xuất: {out_nganh}")
-    print(f"Đã xuất: {out_nhom}")
-    print(f"Đã xuất: {out_sanpham}")
-    print(f"Đã xuất: {out_ton_kho}")
-    print(f"Số dòng sản phẩm thêm mới: {san_pham_added}")
-    print(f"Số dòng tồn kho đầu kỳ thêm mới: {ton_kho_added}")
-    print(f"Số ngành hàng duy nhất: {len(nganh_rows)}")
-    print(f"Số nhóm hàng duy nhất: {len(nhom_rows)}")
-    print("Ghi chú: cột C của MTP-NhomHang được đặt cố định là 'MD'; cột H/I của MTP-SanPham lần lượt là 0 và 999999.")
+    print(
+        "Đã xử lý file nguồn: "
+        f"{source_counts['product']} sản phẩm, "
+        f"{source_counts['customer']} khách hàng, "
+        f"{source_counts['provider']} nhà cung cấp."
+    )
     return 0
 
 

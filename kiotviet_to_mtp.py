@@ -14,6 +14,8 @@ import xlrd
 import xlwt
 from openpyxl import load_workbook
 
+# Supported column aliases for each KiotViet export type.
+# Header matching later normalizes text, so these lists can include small naming variants.
 PRODUCT_HEADER_ALIASES = {
     "loai_hang": ["Loại hàng"],
     "nhom_hang": ["Nhóm hàng(3 Cấp)", "Nhóm hàng (3 Cấp)", "Nhóm hàng"],
@@ -42,12 +44,16 @@ PROVIDER_HEADER_ALIASES = {
     "no_can_tra_hien_tai": ["Nợ cần trả hiện tại"],
 }
 
+# Filename prefixes are checked first when guessing whether an input sheet is
+# product, customer, or provider data.
 SOURCE_PREFIXES = {
     "product": "DanhSachSanPham",
     "customer": "DanhSachKhachHang",
     "provider": "DanhSachNhaCungCap",
 }
 
+# Some templates have old and new filenames, so each logical output can point to
+# more than one accepted candidate.
 TEMPLATE_CANDIDATES = {
     "product_nganh": ["MTP_SP-NganhHang-LoaiHang.xls", "MTP-NganhHang-LoaiHang.xls"],
     "product_nhom": ["MTP_SP-NhomHang.xls", "MTP-NhomHang.xls"],
@@ -59,6 +65,7 @@ TEMPLATE_CANDIDATES = {
 
 
 def clean_text(value) -> str:
+    # Convert any cell value to a normalized single-line string for comparisons.
     if value is None:
         return ""
     if isinstance(value, str):
@@ -69,6 +76,7 @@ def clean_text(value) -> str:
 
 
 def normalize_header(value) -> str:
+    # Remove accents, spaces, and punctuation so header matching is tolerant.
     text = clean_text(value)
     text = unicodedata.normalize("NFKD", text)
     text = "".join(ch for ch in text if not unicodedata.combining(ch))
@@ -76,6 +84,7 @@ def normalize_header(value) -> str:
 
 
 def flatten_aliases(*alias_maps: dict[str, list[str]]) -> list[str]:
+    # Flatten all supported header aliases into one sorted list for error output.
     return sorted(
         {
             alias
@@ -96,6 +105,8 @@ def resolve_columns(
     aliases_map: dict[str, list[str]],
     source_label: str,
 ) -> dict[str, int]:
+    # Build a "field name -> column number" mapping by matching normalized headers
+    # against the alias lists above.
     normalized_headers = {
         normalize_header(header): idx + 1
         for idx, header in enumerate(headers)
@@ -122,6 +133,7 @@ def resolve_columns(
 
 
 def slugify(value: str) -> str:
+    # Create a simple ASCII code fragment from Vietnamese text.
     normalized = unicodedata.normalize("NFKD", value)
     ascii_text = normalized.encode("ascii", "ignore").decode("ascii")
     ascii_text = re.sub(r"[^A-Za-z0-9]+", "-", ascii_text).strip("-").upper()
@@ -129,6 +141,7 @@ def slugify(value: str) -> str:
 
 
 def make_unique_code(base: str, used: set[str], prefix: str = "") -> str:
+    # Reuse the base code when possible, otherwise append -2, -3, ...
     candidate = f"{prefix}{base}"
     if candidate not in used:
         used.add(candidate)
@@ -143,6 +156,7 @@ def make_unique_code(base: str, used: set[str], prefix: str = "") -> str:
 
 
 def read_xlsx_headers(path: Path) -> list[str]:
+    # Read only the first row to detect the source type quickly.
     wb = load_workbook(path, data_only=True, read_only=True)
     try:
         ws = wb.active
@@ -157,6 +171,8 @@ def read_mapped_xlsx_rows(
     source_label: str,
     key_fields: tuple[str, ...],
 ) -> tuple[list[str], list[dict[str, object]]]:
+    # Read a KiotViet sheet and return rows keyed by our internal field names.
+    # Blank data rows are skipped based on the important identifying columns.
     wb = load_workbook(path, data_only=True)
     try:
         ws = wb.active
@@ -179,6 +195,7 @@ def read_mapped_xlsx_rows(
 
 
 def read_kiotviet_rows(path: Path) -> tuple[list[str], list[dict[str, object]]]:
+    # Thin wrappers keep the per-source configuration close to the call site.
     return read_mapped_xlsx_rows(
         path,
         PRODUCT_HEADER_ALIASES,
@@ -206,6 +223,7 @@ def read_provider_rows(path: Path) -> tuple[list[str], list[dict[str, object]]]:
 
 
 def read_xls_rows(path: Path) -> tuple[list[str], list[list[object]]]:
+    # Template files are .xls, so they are handled with xlrd instead of openpyxl.
     book = xlrd.open_workbook(path)
     sheet = book.sheet_by_index(0)
     rows = [sheet.row_values(r) for r in range(sheet.nrows)]
@@ -219,6 +237,7 @@ def write_xls(
     headers: list[str],
     rows: Iterable[Iterable[object]],
 ) -> None:
+    # Write a simple .xls file from headers plus row data.
     wb = xlwt.Workbook()
     ws = wb.add_sheet(sheet_name)
     for c, value in enumerate(headers):
@@ -230,6 +249,7 @@ def write_xls(
 
 
 def to_number(value):
+    # Try to preserve numbers as numeric cells; leave unparseable values untouched.
     if value is None or clean_text(value) == "":
         return None
     if isinstance(value, (int, float)):
@@ -245,6 +265,7 @@ def to_number(value):
 
 
 def to_number_or_default(value, default=0):
+    # Helper for debt/opening-balance fields where empty means a fixed default.
     number = to_number(value)
     if number is None:
         return default
@@ -252,6 +273,9 @@ def to_number_or_default(value, default=0):
 
 
 def detect_source_type(path: Path, headers: list[str]) -> str:
+    # Detection order matters:
+    # 1. filename prefix (fast and explicit)
+    # 2. fallback to key headers when the filename is less reliable
     normalized_name = normalize_header(path.stem)
     for source_type, prefix in SOURCE_PREFIXES.items():
         if normalized_name.startswith(normalize_header(prefix)):
@@ -281,6 +305,7 @@ def detect_source_type(path: Path, headers: list[str]) -> str:
 
 
 def resolve_template_path(templates_dir: Path, candidates: list[str]) -> Path | None:
+    # Return the first template filename that exists on disk.
     for name in candidates:
         path = templates_dir / name
         if path.exists():
@@ -289,10 +314,13 @@ def resolve_template_path(templates_dir: Path, candidates: list[str]) -> Path | 
 
 
 def normalize_row(row: list[object], width: int) -> list[object]:
+    # Pad or trim template rows so downstream builders can index safely.
     return list(row[:width]) + [""] * max(0, width - len(row))
 
 
 def build_nganh_hang(loai_hang_values: list[str], existing_rows: list[list[object]]) -> list[list[object]]:
+    # Build the ngành hàng sheet by keeping existing template rows and adding only
+    # new unique names from the current product data.
     result = []
     existing_names = set()
     used_codes = set()
@@ -319,6 +347,8 @@ def build_nganh_hang(loai_hang_values: list[str], existing_rows: list[list[objec
 
 
 def build_nhom_hang(nhom_hang_values: list[str], existing_rows: list[list[object]]) -> list[list[object]]:
+    # Build the nhóm hàng sheet and force column C to "MD" when it is blank, which
+    # matches the preserved business rule in the original script.
     result = []
     existing_names = set()
     used_codes = set()
@@ -347,6 +377,9 @@ def build_nhom_hang(nhom_hang_values: list[str], existing_rows: list[list[object
 
 
 def build_san_pham(template_path: Path, output_path: Path, kiotviet_rows: list[dict[str, object]]) -> int:
+    # Merge KiotViet products into the product template.
+    # Existing template rows are preserved, and new rows are deduped by product code
+    # first, then by product name if the code is empty.
     headers, existing_rows = read_xls_rows(template_path)
     result = []
     existing_codes = set()
@@ -371,6 +404,7 @@ def build_san_pham(template_path: Path, output_path: Path, kiotviet_rows: list[d
         if dedupe_key in existing_codes:
             continue
         row = [""] * 31
+        # These column positions match the MTP product template layout.
         row[0] = clean_text(item["nhom_hang"])
         row[1] = ma_hang
         row[2] = ten_hang
@@ -404,6 +438,7 @@ def build_san_pham(template_path: Path, output_path: Path, kiotviet_rows: list[d
 
 
 def build_ton_kho_dau_ky(template_path: Path, output_path: Path, kiotviet_rows: list[dict[str, object]]) -> int:
+    # Build opening-stock rows, deduping by product code.
     headers, existing_rows = read_xls_rows(template_path)
     result = []
     existing_codes = set()
@@ -447,6 +482,8 @@ def build_kh_ncc(
     customer_rows: list[dict[str, object]],
     provider_rows: list[dict[str, object]],
 ) -> int:
+    # Build the combined customer/provider master file.
+    # Unlike product builders, this path appends incoming rows without deduping.
     headers, existing_rows = read_xls_rows(template_path)
     result = []
 
@@ -459,6 +496,7 @@ def build_kh_ncc(
 
     for item in customer_rows:
         row = [""] * 13
+        # Customers are always marked as group KL and customer=TRUE.
         row[0] = clean_text(item["ma_khach_hang"])
         row[1] = clean_text(item["ten_khach_hang"])
         row[2] = clean_text(item["dia_chi"])
@@ -470,6 +508,7 @@ def build_kh_ncc(
 
     for item in provider_rows:
         row = [""] * 13
+        # Providers are always marked as group NCC and provider=TRUE.
         row[0] = clean_text(item["ma_nha_cung_cap"])
         row[1] = clean_text(item["ten_nha_cung_cap"])
         row[2] = clean_text(item["dia_chi"])
@@ -509,6 +548,7 @@ def build_kh_cong_no_dau_ky(
     customer_rows: list[dict[str, object]],
     provider_rows: list[dict[str, object]],
 ) -> int:
+    # Build opening receivable/payable balances for both customers and providers.
     headers, existing_rows = read_xls_rows(template_path)
     result = []
 
@@ -550,6 +590,7 @@ def build_kh_cong_no_dau_ky(
 
 
 def parse_args() -> argparse.Namespace:
+    # CLI stays intentionally small: input KiotViet files plus an optional output folder.
     parser = argparse.ArgumentParser(
         description="Chuyển dữ liệu sản phẩm, khách hàng và nhà cung cấp từ Excel KiotViet sang bộ file mẫu MTP."
     )
@@ -570,6 +611,10 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> int:
+    # Main flow:
+    # 1. read and classify each source file
+    # 2. resolve the needed templates
+    # 3. generate only the output groups that have input data
     args = parse_args()
     project_dir = Path(__file__).resolve().parent
     templates_dir = project_dir / "templates"
@@ -579,6 +624,7 @@ def main() -> int:
     provider_rows: list[dict[str, object]] = []
     source_counts = {"product": 0, "customer": 0, "provider": 0}
 
+    # A single run can mix products, customers, and providers.
     for source_path in args.kiotviet:
         if not source_path.exists():
             print(f"Không tìm thấy file: {source_path}", file=sys.stderr)
@@ -599,6 +645,8 @@ def main() -> int:
                 provider_rows.extend(rows)
             source_counts[source_type] += 1
         except ValueError as exc:
+            # When parsing fails, also print the currently supported headers to help
+            # the user compare their export file against the expected format.
             print(str(exc), file=sys.stderr)
             if source_type == "product":
                 supported_headers = KNOWN_PRODUCT_HEADERS
@@ -624,6 +672,7 @@ def main() -> int:
     missing_templates: list[str] = []
     resolved_templates: dict[str, Path] = {}
 
+    # Only require the templates that are needed for the data types present in this run.
     for key, candidates in TEMPLATE_CANDIDATES.items():
         if key.startswith("product_") and not needs_product_outputs:
             continue
@@ -646,6 +695,7 @@ def main() -> int:
     args.outdir.mkdir(parents=True, exist_ok=True)
 
     if needs_product_outputs:
+        # Product data produces four separate MTP files.
         mtp_nganh = resolved_templates["product_nganh"]
         mtp_nhom = resolved_templates["product_nhom"]
         mtp_sanpham = resolved_templates["product_sanpham"]
@@ -692,6 +742,7 @@ def main() -> int:
         )
 
     if needs_partner_outputs:
+        # Customer and provider data share the same KH/NCC templates.
         kh_ncc_template = resolved_templates["kh_ncc"]
         kh_congno_template = resolved_templates["kh_congno"]
         out_kh_ncc = args.outdir / kh_ncc_template.name
@@ -723,4 +774,5 @@ def main() -> int:
 
 
 if __name__ == "__main__":
+    # Keep the script import-friendly while still supporting direct CLI execution.
     sys.exit(main())

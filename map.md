@@ -25,18 +25,18 @@
 - `Địa chỉ`
 - `Nợ cần trả hiện tại`
 
-### Từ KiotViet sang `MTP_SP-NganhHang-LoaiHang.xls`
+### Từ `DanhSachSanPham_*` sang `MTP_SP-NganhHang-LoaiHang.xls`
 - `Loại hàng` → cột B `Tên ngành`
 - Loại bỏ item trùng nhau
 - Tự sinh `Mã ngành`
 
-### Từ KiotViet sang `MTP_SP-NhomHang.xls`
+### Từ `DanhSachSanPham_*` sang `MTP_SP-NhomHang.xls`
 - `Nhóm hàng(3 Cấp)` → cột B `Tên nhóm`
 - Loại bỏ item trùng nhau
 - Cột C `Ngành hàng` luôn = `MD`
 - Tự sinh `Mã nhóm`
 
-### Từ KiotViet sang `MTP_SP-SanPham.xls`
+### Từ `DanhSachSanPham_*` sang `MTP_SP-SanPham.xls`
 - `Nhóm hàng(3 Cấp)` → cột A `Nhóm hàng hóa`
 - `Mã hàng` → cột B `Mã sản phẩm`
 - `Tên hàng` → cột C `Tên sản phẩm`
@@ -46,7 +46,7 @@
 - Cột H `Số lượng tồn tối thiểu` = `0`
 - Cột I `Số lượng tồn tối đa` = `999999`
 
-### Từ KiotViet sang `MTP_SP-TonKhoDauKy.xls`
+### Từ `DanhSachSanPham_*` sang `MTP_SP-TonKhoDauKy.xls`
 - `Mã hàng` → cột A `Mã sản phẩm`
 - `Tồn kho` → cột B `Số lượng đầu kỳ`
 - `Giá vốn` → cột C `Đơn giá đầu kỳ`

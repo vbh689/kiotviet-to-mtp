@@ -408,7 +408,7 @@ def build_san_pham(template_path: Path, output_path: Path, kiotviet_rows: list[d
         row[0] = clean_text(item["nhom_hang"])
         row[1] = ma_hang
         row[2] = ten_hang
-        row[4] = clean_text(item["don_vi_tinh"])
+        row[4] = clean_text(item["don_vi_tinh"]) or "cái"
         row[5] = to_number(item["gia_von"])
         row[6] = to_number(item["gia_ban"])
         row[7] = 0

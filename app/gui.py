@@ -9,6 +9,7 @@ from PyQt6.QtWidgets import (
     QComboBox,
     QDialog,
     QDialogButtonBox,
+    QFileDialog,
     QGridLayout,
     QLabel,
     QMainWindow,
@@ -210,7 +211,7 @@ class DragDropArea(QLabel):
 
     def __init__(self):
         super().__init__()
-        self.setText("Kéo thả file Excel KiotViet (.xlsx) vào đây\n\n(DanhSachSanPham..., DanhSachKhachHang..., DanhSachNhaCungCap...)")
+        self.setText("Kéo thả hoặc click vào đây để chọn file Excel KiotViet (.xlsx)\n\n(DanhSachSanPham..., DanhSachKhachHang..., DanhSachNhaCungCap...)")
         self.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.setStyleSheet("""
             QLabel {
@@ -222,6 +223,20 @@ class DragDropArea(QLabel):
             }
         """)
         self.setAcceptDrops(True)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            files, _ = QFileDialog.getOpenFileNames(
+                self,
+                "Chọn file Excel KiotViet",
+                "",
+                "Excel Files (*.xlsx)"
+            )
+            if files:
+                self.files_dropped.emit(files)
+        else:
+            super().mousePressEvent(event)
 
     def dragEnterEvent(self, event):
         if event.mimeData().hasUrls():

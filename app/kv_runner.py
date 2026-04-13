@@ -52,7 +52,12 @@ def get_templates_dir() -> Path:
 def get_default_outdir() -> Path:
     if getattr(sys, 'frozen', False):
         # PyInstaller bundled: write next to where it's executed
-        return Path.cwd() / "output"
+        exe_path = Path(sys.executable).resolve()
+        # On macOS inside a windowed .app bundle, sys.executable is 
+        # path/to/MyApp.app/Contents/MacOS/MyApp
+        if sys.platform == "darwin" and exe_path.parent.name == "MacOS" and exe_path.parent.parent.name == "Contents":
+            return exe_path.parent.parent.parent.parent / "output"
+        return exe_path.parent / "output"
     return get_project_dir() / "output"
 
 

@@ -35,6 +35,26 @@ from .kv_excel import (
 from .kv_utils import clean_text, flatten_aliases, normalize_header
 
 
+def get_project_dir() -> Path:
+    # This module lives under app/, but templates/ and the default output folder
+    # are still rooted at the repository level.
+    return Path(__file__).resolve().parent.parent
+
+
+def get_templates_dir() -> Path:
+    if getattr(sys, 'frozen', False):
+        # PyInstaller bundled execution
+        return Path(sys._MEIPASS) / "templates"
+    return get_project_dir() / "templates"
+
+
+def get_default_outdir() -> Path:
+    if getattr(sys, 'frozen', False):
+        # PyInstaller bundled: write next to where it's executed
+        return Path.cwd() / "output"
+    return get_project_dir() / "output"
+
+
 def detect_source_type(path: Path, headers: list[str]) -> str:
     # Detection order matters:
     # 1. filename prefix (fast and explicit)
@@ -83,15 +103,15 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--kiotviet",
-        required=True,
+        required=False,
         nargs="+",
         type=Path,
-        help="Một hoặc nhiều file Excel KiotViet .xlsx",
+        help="Một hoặc nhiều file Excel KiotViet .xlsx (Bỏ trống để mở chế độ giao diện GUI)",
     )
     parser.add_argument(
         "--outdir",
         type=Path,
-        default=Path(__file__).resolve().parent / "output",
+        default=get_default_outdir(),
         help="Thư mục xuất file (mặc định: ./output)",
     )
     return parser.parse_args()
@@ -103,8 +123,18 @@ def main() -> int:
     # 2. resolve the needed templates
     # 3. generate only the output groups that have input data
     args = parse_args()
-    project_dir = Path(__file__).resolve().parent
-    templates_dir = project_dir / "templates"
+    
+    # Fallback to GUI mode if no files were passed via CLI
+    if not args.kiotviet:
+        try:
+            from .gui import run_gui
+            return run_gui()
+        except ImportError as e:
+            print(f"Lỗi: Không thể khởi chạy giao diện do thiếu thư viện PyQt6 ({e}).", file=sys.stderr)
+            print("Chạy `pip install PyQt6` để cài đặt giao diện, hoặc truyền đối số `--kiotviet` để chạy giao diện dòng lệnh.", file=sys.stderr)
+            return 1
+            
+    templates_dir = get_templates_dir()
 
     product_rows: list[dict[str, object]] = []
     customer_rows: list[dict[str, object]] = []

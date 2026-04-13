@@ -32,6 +32,13 @@ Chạy bằng giao diện cửa sổ kéo-thả (GUI) mặc định:
 python kiotviet_to_mtp.py
 ```
 
+Trong GUI:
+
+1. Kéo thả một hoặc nhiều file `.xlsx` xuất từ KiotViet.
+2. Kiểm tra hộp thoại chọn cột. Ứng dụng sẽ tự chọn các cột khớp với tiêu đề mặc định hiện có.
+3. Đổi cột nguồn nếu file KiotViet của bạn đổi tên tiêu đề hoặc sắp xếp lại cột.
+4. Bấm OK để chuyển đổi. Mọi mapping tùy chỉnh chỉ áp dụng cho lần chạy hiện tại và không được lưu.
+
 Hoặc chạy dòng lệnh (CLI) tự động với một hoặc nhiều file KiotViet:
 
 ```bash
@@ -45,6 +52,8 @@ Dùng `--outdir` để đổi thư mục xuất:
 ```bash
 python kiotviet_to_mtp.py --kiotviet /duong-dan/DanhSachKhachHang.xlsx /duong-dan/DanhSachNhaCungCap.xlsx --outdir ./output
 ```
+
+CLI vẫn dùng cơ chế tự nhận diện cột bằng tiêu đề mặc định/alias trong `map.md` và không hỏi mapping tùy chỉnh.
 
 ## File đầu ra
 
@@ -63,7 +72,7 @@ Bạn có thể đóng gói toàn bộ chương trình thành 1 file chạy duy 
 
 ### Cho MacOS / Linux:
 ```bash
-pyinstaller --onefile --windowed --add-data "templates:templates" kiotviet_to_mtp.py
+pyinstaller --onedir --windowed --add-data "templates:templates" kiotviet_to_mtp.py
 ```
 > Lưu ý: dấu ngăn cách trong `--add-data` của MacOS là dấu hai chấm `:`. File đầu ra nằm ở `dist/kiotviet_to_mtp`.
 

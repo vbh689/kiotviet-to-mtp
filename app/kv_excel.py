@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Iterable
+from typing import Iterable, Mapping
 
 import xlrd
 import xlwt
@@ -21,16 +21,38 @@ def resolve_columns(
     headers: list[str],
     aliases_map: dict[str, list[str]],
     source_label: str,
+    explicit_columns: Mapping[str, int] | None = None,
 ) -> dict[str, int]:
+    if explicit_columns is not None:
+        return validate_explicit_columns(headers, aliases_map, source_label, explicit_columns)
+
     # Build a "field name -> column number" mapping by matching normalized headers
     # against the alias lists above.
+    resolved = resolve_alias_columns(headers, aliases_map)
+    missing = [
+        f"{field} ({', '.join(aliases)})"
+        for field, aliases in aliases_map.items()
+        if field not in resolved
+    ]
+
+    if missing:
+        raise ValueError(f"Thiếu cột bắt buộc trong file {source_label}: " + "; ".join(missing))
+
+    return resolved
+
+
+def resolve_alias_columns(
+    headers: list[str],
+    aliases_map: dict[str, list[str]],
+) -> dict[str, int]:
+    # Return only fields that can be matched by aliases. GUI callers use this to
+    # preselect defaults without treating missing headers as fatal yet.
     normalized_headers = {
         normalize_header(header): idx + 1
         for idx, header in enumerate(headers)
         if clean_text(header)
     }
     resolved: dict[str, int] = {}
-    missing: list[str] = []
 
     for field, aliases in aliases_map.items():
         match = None
@@ -38,13 +60,42 @@ def resolve_columns(
             match = normalized_headers.get(normalize_header(alias))
             if match is not None:
                 break
-        if match is None:
-            missing.append(f"{field} ({', '.join(aliases)})")
-            continue
-        resolved[field] = match
+        if match is not None:
+            resolved[field] = match
 
+    return resolved
+
+
+def validate_explicit_columns(
+    headers: list[str],
+    aliases_map: dict[str, list[str]],
+    source_label: str,
+    explicit_columns: Mapping[str, int],
+) -> dict[str, int]:
+    missing = [field for field in aliases_map if field not in explicit_columns]
     if missing:
-        raise ValueError(f"Thiếu cột bắt buộc trong file {source_label}: " + "; ".join(missing))
+        raise ValueError(
+            f"Thiếu mapping bắt buộc trong file {source_label}: " + ", ".join(missing)
+        )
+
+    invalid: list[str] = []
+    max_column = len(headers)
+    resolved: dict[str, int] = {}
+
+    for field in aliases_map:
+        col_idx = explicit_columns[field]
+        if isinstance(col_idx, bool) or not isinstance(col_idx, int):
+            invalid.append(f"{field}={col_idx!r} không phải số cột")
+            continue
+        if col_idx < 1 or col_idx > max_column:
+            invalid.append(f"{field}=cột {col_idx} ngoài phạm vi 1-{max_column}")
+            continue
+        resolved[field] = col_idx
+
+    if invalid:
+        raise ValueError(
+            f"Mapping cột không hợp lệ trong file {source_label}: " + "; ".join(invalid)
+        )
 
     return resolved
 
@@ -64,6 +115,7 @@ def read_mapped_xlsx_rows(
     aliases_map: dict[str, list[str]],
     source_label: str,
     key_fields: tuple[str, ...],
+    column_mapping: Mapping[str, int] | None = None,
 ) -> tuple[list[str], list[dict[str, object]]]:
     # Read a KiotViet sheet and return rows keyed by our internal field names.
     # Blank data rows are skipped based on the important identifying columns.
@@ -71,7 +123,7 @@ def read_mapped_xlsx_rows(
     try:
         ws = wb.active
         headers = [clean_text(c.value) for c in ws[1]]
-        columns = resolve_columns(headers, aliases_map, source_label)
+        columns = resolve_columns(headers, aliases_map, source_label, column_mapping)
         rows: list[dict[str, object]] = []
 
         for row_idx in range(2, ws.max_row + 1):
@@ -88,31 +140,43 @@ def read_mapped_xlsx_rows(
         wb.close()
 
 
-def read_kiotviet_rows(path: Path) -> tuple[list[str], list[dict[str, object]]]:
+def read_kiotviet_rows(
+    path: Path,
+    column_mapping: Mapping[str, int] | None = None,
+) -> tuple[list[str], list[dict[str, object]]]:
     # Thin wrappers keep the per-source configuration close to the call site.
     return read_mapped_xlsx_rows(
         path,
         PRODUCT_HEADER_ALIASES,
         "KiotViet sản phẩm",
         ("ma_hang", "ten_hang"),
+        column_mapping,
     )
 
 
-def read_customer_rows(path: Path) -> tuple[list[str], list[dict[str, object]]]:
+def read_customer_rows(
+    path: Path,
+    column_mapping: Mapping[str, int] | None = None,
+) -> tuple[list[str], list[dict[str, object]]]:
     return read_mapped_xlsx_rows(
         path,
         CUSTOMER_HEADER_ALIASES,
         "KiotViet khách hàng",
         ("ma_khach_hang", "ten_khach_hang"),
+        column_mapping,
     )
 
 
-def read_provider_rows(path: Path) -> tuple[list[str], list[dict[str, object]]]:
+def read_provider_rows(
+    path: Path,
+    column_mapping: Mapping[str, int] | None = None,
+) -> tuple[list[str], list[dict[str, object]]]:
     return read_mapped_xlsx_rows(
         path,
         PROVIDER_HEADER_ALIASES,
         "KiotViet nhà cung cấp",
         ("ma_nha_cung_cap", "ten_nha_cung_cap"),
+        column_mapping,
     )
 
 

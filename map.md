@@ -1,5 +1,7 @@
 ### Các tiêu đề KiotViet đang hỗ trợ
 
+Giao diện GUI tự chọn các tiêu đề này làm mặc định, nhưng người dùng có thể đổi sang cột nguồn khác trong hộp thoại mapping trước khi chuyển đổi. Mapping tùy chỉnh chỉ áp dụng cho lần chạy hiện tại. CLI vẫn dùng tự động các tiêu đề/alias bên dưới.
+
 #### Sản phẩm
 - `Loại hàng`
 - `Nhóm hàng(3 Cấp)` / `Nhóm hàng (3 Cấp)` / `Nhóm hàng`

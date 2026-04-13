@@ -2,50 +2,206 @@ import sys
 import os
 import io
 import contextlib
+from dataclasses import dataclass
 from pathlib import Path
 from PyQt6.QtWidgets import (
-    QApplication, QMainWindow, QVBoxLayout, QWidget, QLabel, QTextEdit, QHBoxLayout, QPushButton
+    QApplication,
+    QComboBox,
+    QDialog,
+    QDialogButtonBox,
+    QGridLayout,
+    QLabel,
+    QMainWindow,
+    QMessageBox,
+    QTabWidget,
+    QTextEdit,
+    QVBoxLayout,
+    QWidget,
 )
 from PyQt6.QtCore import Qt, pyqtSignal, QThread
 
-# Run conversion by patching sys.argv and redirecting stdout
-def run_cli_conversion(files: list[str], output_dir: str = None):
-    from .kv_runner import main
-    # Save original args and stdout
-    original_argv = sys.argv[:]
-    
-    # We build the argv as if it was called from CLI
-    new_argv = ["kiotviet_to_mtp", "--kiotviet"] + files
-    if output_dir:
-        new_argv += ["--outdir", output_dir]
-    
-    sys.argv = new_argv
-    
+from .kv_config import (
+    CUSTOMER_HEADER_ALIASES,
+    PRODUCT_HEADER_ALIASES,
+    PROVIDER_HEADER_ALIASES,
+)
+from .kv_excel import read_xlsx_headers, resolve_alias_columns
+from .kv_mapping import ColumnMappings, MAPPING_METADATA, SOURCE_TYPE_LABELS
+from .kv_runner import convert_kiotviet_files, detect_source_type, get_default_outdir
+from .kv_utils import clean_text, excel_column_letter
+
+
+ALIASES_BY_SOURCE_TYPE = {
+    "product": PRODUCT_HEADER_ALIASES,
+    "customer": CUSTOMER_HEADER_ALIASES,
+    "provider": PROVIDER_HEADER_ALIASES,
+}
+
+
+@dataclass(frozen=True)
+class SourceFileInfo:
+    path: Path
+    source_type: str
+    headers: list[str]
+
+
+def format_source_column(index: int, header: str) -> str:
+    label = clean_text(header) or "(không có tiêu đề)"
+    return f"{excel_column_letter(index)} - {label}"
+
+
+# Run conversion directly while redirecting console output into the GUI log.
+def run_gui_conversion(
+    files: list[str],
+    column_mappings: ColumnMappings,
+    output_dir: str | None = None,
+) -> str:
+    outdir = Path(output_dir) if output_dir else get_default_outdir()
+
     f = io.StringIO()
     try:
         with contextlib.redirect_stdout(f), contextlib.redirect_stderr(f):
-            # Run the actual CLI main function
-            main()
-    except SystemExit as e:
-        # argparse can call sys.exit, we just catch it harmlessly
-        pass
+            convert_kiotviet_files([Path(file) for file in files], outdir, column_mappings)
     except Exception as e:
         import traceback
         f.write(traceback.format_exc())
-    finally:
-        sys.argv = original_argv
-        
+
     return f.getvalue()
+
+
+class ColumnMappingDialog(QDialog):
+    def __init__(self, grouped_files: dict[str, list[SourceFileInfo]], parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Chọn cột dữ liệu KiotViet")
+        self.resize(860, 520)
+        self.grouped_files = grouped_files
+        self.combos: dict[str, dict[str, QComboBox]] = {}
+
+        layout = QVBoxLayout(self)
+        intro = QLabel(
+            "Kiểm tra hoặc đổi cột nguồn cho lần chuyển đổi này. "
+            "Các lựa chọn này không được lưu cho lần chạy sau."
+        )
+        intro.setWordWrap(True)
+        layout.addWidget(intro)
+
+        tabs = QTabWidget()
+        layout.addWidget(tabs)
+
+        for source_type, infos in grouped_files.items():
+            tabs.addTab(
+                self._build_source_tab(source_type, infos),
+                SOURCE_TYPE_LABELS.get(source_type, source_type),
+            )
+
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+    def _build_source_tab(self, source_type: str, infos: list[SourceFileInfo]) -> QWidget:
+        tab = QWidget()
+        layout = QGridLayout(tab)
+        layout.setColumnStretch(1, 1)
+        layout.setColumnStretch(2, 2)
+
+        first = infos[0]
+        default_columns = resolve_alias_columns(first.headers, ALIASES_BY_SOURCE_TYPE[source_type])
+        self.combos[source_type] = {}
+
+        file_names = ", ".join(info.path.name for info in infos)
+        file_label = QLabel(f"Áp dụng cho: {file_names}")
+        file_label.setWordWrap(True)
+        layout.addWidget(file_label, 0, 0, 1, 3)
+
+        layout.addWidget(QLabel("Trường KiotViet"), 1, 0)
+        layout.addWidget(QLabel("Cột nguồn"), 1, 1)
+        layout.addWidget(QLabel("Dùng cho MTP"), 1, 2)
+
+        for row_idx, item in enumerate(MAPPING_METADATA[source_type], start=2):
+            layout.addWidget(QLabel(item.label), row_idx, 0)
+
+            combo = QComboBox()
+            combo.addItem("-- Chọn cột --", None)
+            for col_idx, header in enumerate(first.headers, start=1):
+                combo.addItem(format_source_column(col_idx, header), col_idx)
+
+            default_idx = default_columns.get(item.field)
+            if default_idx is not None:
+                found = combo.findData(default_idx)
+                if found >= 0:
+                    combo.setCurrentIndex(found)
+
+            self.combos[source_type][item.field] = combo
+            layout.addWidget(combo, row_idx, 1)
+
+            targets = "; ".join(
+                f"{target.template} / {target.column} / {target.label}"
+                for target in item.targets
+            )
+            target_label = QLabel(targets)
+            target_label.setWordWrap(True)
+            layout.addWidget(target_label, row_idx, 2)
+
+        return tab
+
+    def column_mappings(self) -> ColumnMappings:
+        mappings: ColumnMappings = {}
+        for source_type, fields in self.combos.items():
+            mappings[source_type] = {}
+            for field, combo in fields.items():
+                mappings[source_type][field] = combo.currentData()
+        return mappings
+
+    def accept(self):
+        mappings = self.column_mappings()
+        missing: list[str] = []
+        invalid: list[str] = []
+
+        for source_type, fields in mappings.items():
+            label = SOURCE_TYPE_LABELS.get(source_type, source_type)
+            for item in MAPPING_METADATA[source_type]:
+                col_idx = fields.get(item.field)
+                if col_idx is None:
+                    missing.append(f"{label}: {item.label}")
+                    continue
+                for info in self.grouped_files[source_type]:
+                    if col_idx > len(info.headers):
+                        invalid.append(
+                            f"{info.path.name}: {item.label} chọn cột {excel_column_letter(col_idx)} "
+                            f"nhưng file chỉ có {len(info.headers)} cột"
+                        )
+
+        if missing:
+            QMessageBox.warning(
+                self,
+                "Thiếu mapping",
+                "Vui lòng chọn cột cho:\n" + "\n".join(missing),
+            )
+            return
+
+        if invalid:
+            QMessageBox.warning(
+                self,
+                "Mapping không hợp lệ",
+                "Một số lựa chọn không tồn tại trong file cùng loại:\n" + "\n".join(invalid),
+            )
+            return
+
+        super().accept()
 
 class ConversionWorker(QThread):
     result_ready = pyqtSignal(str)
 
-    def __init__(self, files):
+    def __init__(self, files, column_mappings: ColumnMappings):
         super().__init__()
         self.files = files
+        self.column_mappings = column_mappings
 
     def run(self):
-        output = run_cli_conversion(self.files)
+        output = run_gui_conversion(self.files, self.column_mappings)
         self.result_ready.emit(output)
 
 
@@ -160,12 +316,35 @@ class MainWindow(QMainWindow):
         for f in xlsx_files:
             self.log_output.append(f" - {os.path.basename(f)}")
         self.log_output.append("")
+
+        try:
+            grouped = self.prepare_mapping_context(xlsx_files)
+        except ValueError as exc:
+            self.log_output.append(f">>> Lỗi: {exc}\n")
+            QMessageBox.warning(self, "Không thể đọc file", str(exc))
+            return
+
+        dialog = ColumnMappingDialog(grouped, self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            self.log_output.append(">>> Đã hủy trước khi chuyển đổi.\n")
+            return
         
         # Disable drop area while processing
         self.drop_area.setAcceptDrops(False)
-        self.worker = ConversionWorker(xlsx_files)
+        self.worker = ConversionWorker(xlsx_files, dialog.column_mappings())
         self.worker.result_ready.connect(self.on_processing_finished)
         self.worker.start()
+
+    def prepare_mapping_context(self, files: list[str]) -> dict[str, list[SourceFileInfo]]:
+        grouped: dict[str, list[SourceFileInfo]] = {}
+        for file in files:
+            path = Path(file)
+            headers = read_xlsx_headers(path)
+            source_type = detect_source_type(path, headers)
+            grouped.setdefault(source_type, []).append(
+                SourceFileInfo(path=path, source_type=source_type, headers=headers)
+            )
+        return grouped
         
     def on_processing_finished(self, output):
         self.log_output.append(output)

@@ -38,6 +38,17 @@ def flatten_aliases(*alias_maps: dict[str, list[str]]) -> list[str]:
     )
 
 
+def excel_column_letter(index: int) -> str:
+    # Convert a 1-based column index to Excel letters: 1 -> A, 27 -> AA.
+    if index < 1:
+        raise ValueError("Column index must be 1 or greater")
+    letters = ""
+    while index:
+        index, remainder = divmod(index - 1, 26)
+        letters = chr(65 + remainder) + letters
+    return letters
+
+
 def slugify(value: str) -> str:
     # Create a simple ASCII code fragment from Vietnamese text.
     normalized = unicodedata.normalize("NFKD", value)

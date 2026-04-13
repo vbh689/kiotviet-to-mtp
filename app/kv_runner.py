@@ -32,6 +32,7 @@ from .kv_excel import (
     read_xlsx_headers,
     write_xls,
 )
+from .kv_mapping import ColumnMappings
 from .kv_utils import clean_text, flatten_aliases, normalize_header
 
 
@@ -117,23 +118,15 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def main() -> int:
-    # Main flow:
+def convert_kiotviet_files(
+    source_paths: list[Path],
+    outdir: Path,
+    column_mappings: ColumnMappings | None = None,
+) -> int:
+    # Shared conversion flow:
     # 1. read and classify each source file
     # 2. resolve the needed templates
     # 3. generate only the output groups that have input data
-    args = parse_args()
-    
-    # Fallback to GUI mode if no files were passed via CLI
-    if not args.kiotviet:
-        try:
-            from .gui import run_gui
-            return run_gui()
-        except ImportError as e:
-            print(f"Lỗi: Không thể khởi chạy giao diện do thiếu thư viện PyQt6 ({e}).", file=sys.stderr)
-            print("Chạy `pip install PyQt6` để cài đặt giao diện, hoặc truyền đối số `--kiotviet` để chạy giao diện dòng lệnh.", file=sys.stderr)
-            return 1
-            
     templates_dir = get_templates_dir()
 
     product_rows: list[dict[str, object]] = []
@@ -142,7 +135,8 @@ def main() -> int:
     source_counts = {"product": 0, "customer": 0, "provider": 0}
 
     # A single run can mix products, customers, and providers.
-    for source_path in args.kiotviet:
+    for source_path in source_paths:
+        source_path = Path(source_path)
         if not source_path.exists():
             print(f"Không tìm thấy file: {source_path}", file=sys.stderr)
             return 1
@@ -151,14 +145,17 @@ def main() -> int:
         try:
             headers = read_xlsx_headers(source_path)
             source_type = detect_source_type(source_path, headers)
+            selected_mapping = None
+            if column_mappings is not None:
+                selected_mapping = column_mappings.get(source_type)
             if source_type == "product":
-                _, rows = read_kiotviet_rows(source_path)
+                _, rows = read_kiotviet_rows(source_path, selected_mapping)
                 product_rows.extend(rows)
             elif source_type == "customer":
-                _, rows = read_customer_rows(source_path)
+                _, rows = read_customer_rows(source_path, selected_mapping)
                 customer_rows.extend(rows)
             else:
-                _, rows = read_provider_rows(source_path)
+                _, rows = read_provider_rows(source_path, selected_mapping)
                 provider_rows.extend(rows)
             source_counts[source_type] += 1
         except ValueError as exc:
@@ -209,7 +206,7 @@ def main() -> int:
         )
         return 1
 
-    args.outdir.mkdir(parents=True, exist_ok=True)
+    outdir.mkdir(parents=True, exist_ok=True)
 
     if needs_product_outputs:
         # Product data produces four separate MTP files.
@@ -225,10 +222,10 @@ def main() -> int:
         nganh_rows = build_nganh_hang(loai_hang_values, nganh_existing)
         nhom_rows = build_nhom_hang(nhom_hang_values, nhom_existing)
 
-        out_nganh = args.outdir / mtp_nganh.name
-        out_nhom = args.outdir / mtp_nhom.name
-        out_sanpham = args.outdir / mtp_sanpham.name
-        out_ton_kho = args.outdir / ton_kho_dau_ky.name
+        out_nganh = outdir / mtp_nganh.name
+        out_nhom = outdir / mtp_nhom.name
+        out_sanpham = outdir / mtp_sanpham.name
+        out_ton_kho = outdir / ton_kho_dau_ky.name
 
         write_xls(
             out_nganh,
@@ -262,8 +259,8 @@ def main() -> int:
         # Customer and provider data share the same KH/NCC templates.
         kh_ncc_template = resolved_templates["kh_ncc"]
         kh_congno_template = resolved_templates["kh_congno"]
-        out_kh_ncc = args.outdir / kh_ncc_template.name
-        out_kh_congno = args.outdir / kh_congno_template.name
+        out_kh_ncc = outdir / kh_ncc_template.name
+        out_kh_congno = outdir / kh_congno_template.name
         kh_ncc_added = build_kh_ncc(kh_ncc_template, out_kh_ncc, customer_rows, provider_rows)
         kh_congno_added = build_kh_cong_no_dau_ky(
             kh_congno_template,
@@ -288,3 +285,19 @@ def main() -> int:
         f"{source_counts['provider']} nhà cung cấp."
     )
     return 0
+
+
+def main() -> int:
+    args = parse_args()
+
+    # Fallback to GUI mode if no files were passed via CLI.
+    if not args.kiotviet:
+        try:
+            from .gui import run_gui
+            return run_gui()
+        except ImportError as e:
+            print(f"Lỗi: Không thể khởi chạy giao diện do thiếu thư viện PyQt6 ({e}).", file=sys.stderr)
+            print("Chạy `pip install PyQt6` để cài đặt giao diện, hoặc truyền đối số `--kiotviet` để chạy giao diện dòng lệnh.", file=sys.stderr)
+            return 1
+
+    return convert_kiotviet_files(args.kiotviet, args.outdir)

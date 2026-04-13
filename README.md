@@ -68,16 +68,16 @@ Tùy theo loại file nguồn được truyền vào, script sẽ sinh các file
 
 ## Đóng gói ứng dụng (Compile Guide)
 
-Bạn có thể đóng gói toàn bộ chương trình thành 1 file chạy duy nhất (Executable) bao gồm sẵn giao diện (GUI) và thư mục `templates/`. Tùy theo hệ điều hành hiện tại, vui lòng chạy các lệnh sau:
+Bạn có thể đóng gói toàn bộ chương trình thành ứng dụng độc lập dạng thư mục (bao gồm file chạy trực tiếp) và chứa sẵn thư mục `templates/`. Tùy theo hệ điều hành hiện tại, vui lòng chạy các lệnh sau:
 
 ### Cho MacOS / Linux:
 ```bash
-pyinstaller --onedir --windowed --add-data "templates:templates" kiotviet_to_mtp.py
+pyinstaller --noconfirm --clean --windowed --onedir --add-data "templates:templates" --name "toMTP" kiotviet_to_mtp.py
 ```
 > Lưu ý: dấu ngăn cách trong `--add-data` của MacOS là dấu hai chấm `:`. File đầu ra nằm ở `dist/kiotviet_to_mtp`.
 
 ### Cho Windows:
 ```bash
-pyinstaller --onefile --windowed --add-data "templates;templates" kiotviet_to_mtp.py
+pyinstaller --noconfirm --clean --windowed --onedir --add-data "templates;templates" --name "toMTP" kiotviet_to_mtp.py
 ```
-> Lưu ý: dấu ngăn cách trong `--add-data` của Windows là dấu chấm phẩy `;`. File đầu ra nằm ở `dist\kiotviet_to_mtp.exe`.
+> Lưu ý: dấu ngăn cách trong `--add-data` của Windows là dấu chấm phẩy `;`. Mục chạy nằm ở `dist\kiotviet_to_mtp\kiotviet_to_mtp.exe`.

@@ -73,7 +73,12 @@ def build_nhom_hang(nhom_hang_values: list[str], existing_rows: list[list[object
     return result
 
 
-def build_san_pham(template_path: Path, output_path: Path, kiotviet_rows: list[dict[str, object]]) -> int:
+def build_san_pham(
+    template_path: Path,
+    output_path: Path,
+    kiotviet_rows: list[dict[str, object]],
+    merge_dvt: bool = False,
+) -> int:
     # Merge KiotViet products into the product template.
     # Existing template rows are preserved, and new rows are deduped by product code
     # first, then by product name if the code is empty.
@@ -82,7 +87,7 @@ def build_san_pham(template_path: Path, output_path: Path, kiotviet_rows: list[d
     existing_codes = set()
 
     for row in existing_rows:
-        normalized = normalize_row(row, 31)
+        normalized = normalize_row(row, 82 if merge_dvt else 31)
         ma_san_pham = clean_text(normalized[1]) if len(normalized) > 1 else ""
         ten_san_pham = clean_text(normalized[2]) if len(normalized) > 2 else ""
         dedupe_key = ma_san_pham.casefold() or ten_san_pham.casefold()
@@ -91,8 +96,20 @@ def build_san_pham(template_path: Path, output_path: Path, kiotviet_rows: list[d
         if any(clean_text(cell) for cell in normalized):
             result.append(normalized)
 
+    primary_rows = []
+    variants_by_parent: dict[str, list[dict[str, object]]] = {}
+    if merge_dvt:
+        for item in kiotviet_rows:
+            ma_dvt_co_ban = clean_text(item.get("ma_dvt_co_ban", ""))
+            if ma_dvt_co_ban:
+                variants_by_parent.setdefault(ma_dvt_co_ban, []).append(item)
+            else:
+                primary_rows.append(item)
+    else:
+        primary_rows = kiotviet_rows
+
     added = 0
-    for item in kiotviet_rows:
+    for item in primary_rows:
         ma_hang = clean_text(item["ma_hang"])
         ten_hang = clean_text(item["ten_hang"])
         if not ma_hang and not ten_hang:
@@ -100,7 +117,7 @@ def build_san_pham(template_path: Path, output_path: Path, kiotviet_rows: list[d
         dedupe_key = ma_hang.casefold() or ten_hang.casefold()
         if dedupe_key in existing_codes:
             continue
-        row = [""] * 31
+        row = [""] * (82 if merge_dvt else 31)
         # These column positions match the MTP product template layout.
         row[0] = clean_text(item["nhom_hang"])
         row[1] = ma_hang
@@ -110,6 +127,15 @@ def build_san_pham(template_path: Path, output_path: Path, kiotviet_rows: list[d
         row[6] = to_number(item["gia_ban"])
         row[7] = 0
         row[8] = 999999
+
+        if merge_dvt:
+            variants = variants_by_parent.get(ma_hang, [])
+            for i, variant in enumerate(variants[:20]):
+                base = 22 + i * 3
+                row[base] = clean_text(variant.get("don_vi_tinh", ""))
+                row[base + 1] = to_number(variant.get("quy_doi", ""))
+                row[base + 2] = to_number(variant.get("gia_ban", ""))
+
         result.append(row)
         existing_codes.add(dedupe_key)
         added += 1
@@ -134,7 +160,13 @@ def build_san_pham(template_path: Path, output_path: Path, kiotviet_rows: list[d
     return added
 
 
-def build_ton_kho_dau_ky(template_path: Path, output_path: Path, kiotviet_rows: list[dict[str, object]]) -> int:
+def build_ton_kho_dau_ky(
+    template_path: Path,
+    output_path: Path,
+    kiotviet_rows: list[dict[str, object]],
+    merge_dvt: bool = False,
+    variant_codes: set[str] | None = None,
+) -> int:
     # Build opening-stock rows, deduping by product code.
     headers, existing_rows = read_xls_rows(template_path)
     result = []
@@ -152,6 +184,8 @@ def build_ton_kho_dau_ky(template_path: Path, output_path: Path, kiotviet_rows: 
     for item in kiotviet_rows:
         ma_hang = clean_text(item["ma_hang"])
         if not ma_hang:
+            continue
+        if merge_dvt and variant_codes and ma_hang in variant_codes:
             continue
         dedupe_key = ma_hang.casefold()
         if dedupe_key in existing_codes:

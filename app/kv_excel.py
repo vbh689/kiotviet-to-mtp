@@ -12,6 +12,7 @@ from openpyxl import load_workbook
 from .kv_config import (
     CUSTOMER_HEADER_ALIASES,
     PRODUCT_HEADER_ALIASES,
+    PRODUCT_OPTIONAL_HEADER_ALIASES,
     PROVIDER_HEADER_ALIASES,
 )
 from .kv_utils import clean_text, normalize_header
@@ -116,6 +117,7 @@ def read_mapped_xlsx_rows(
     source_label: str,
     key_fields: tuple[str, ...],
     column_mapping: Mapping[str, int] | None = None,
+    optional_aliases_map: dict[str, list[str]] | None = None,
 ) -> tuple[list[str], list[dict[str, object]]]:
     # Read a KiotViet sheet and return rows keyed by our internal field names.
     # Blank data rows are skipped based on the important identifying columns.
@@ -124,6 +126,17 @@ def read_mapped_xlsx_rows(
         ws = wb.active
         headers = [clean_text(c.value) for c in ws[1]]
         columns = resolve_columns(headers, aliases_map, source_label, column_mapping)
+        optional_columns = {}
+        if optional_aliases_map:
+            if column_mapping:
+                for field in optional_aliases_map:
+                    if field in column_mapping:
+                        col_idx = column_mapping[field]
+                        if isinstance(col_idx, int) and 1 <= col_idx <= len(headers):
+                            optional_columns[field] = col_idx
+            else:
+                optional_columns = resolve_alias_columns(headers, optional_aliases_map)
+
         rows: list[dict[str, object]] = []
 
         for row_idx in range(2, ws.max_row + 1):
@@ -133,6 +146,12 @@ def read_mapped_xlsx_rows(
             }
             if all(clean_text(row[field]) == "" for field in key_fields):
                 continue
+
+            if optional_aliases_map:
+                for field in optional_aliases_map:
+                    col_idx = optional_columns.get(field)
+                    row[field] = ws.cell(row_idx, col_idx).value if col_idx else None
+
             rows.append(row)
 
         return headers, rows
@@ -151,6 +170,7 @@ def read_kiotviet_rows(
         "KiotViet sản phẩm",
         ("ma_hang", "ten_hang"),
         column_mapping,
+        PRODUCT_OPTIONAL_HEADER_ALIASES,
     )
 
 

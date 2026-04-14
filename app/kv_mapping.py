@@ -92,6 +92,12 @@ MAPPING_METADATA: dict[str, tuple[FieldMapping, ...]] = {
             (TargetUsage("MTP_SP-SanPham.xls", "X+", "Quy đổi ĐVT phụ 01–20"),),
             is_optional=True,
         ),
+        FieldMapping(
+            "ma_vach",
+            "Mã vạch",
+            (TargetUsage("MTP_SP-SanPham.xls", "M", "Mã 2"),),
+            is_optional=True,
+        ),
     ),
     "customer": (
         FieldMapping(

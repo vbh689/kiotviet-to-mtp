@@ -16,6 +16,7 @@ Tạo và kích hoạt môi trường ảo:
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
+# .venv/Scripts/Activate.ps1
 ```
 
 Cài các thư viện cần thiết:
@@ -68,7 +69,7 @@ Tùy theo loại file nguồn được truyền vào, script sẽ sinh các file
 
 ## Đóng gói ứng dụng (Compile Guide)
 
-Bạn có thể đóng gói toàn bộ chương trình thành ứng dụng độc lập dạng thư mục (bao gồm file chạy trực tiếp) và chứa sẵn thư mục `templates/`. Tùy theo hệ điều hành hiện tại, vui lòng chạy các lệnh sau:
+Có thể đóng gói toàn bộ chương trình thành ứng dụng (bao gồm file chạy trực tiếp) và chứa sẵn thư mục `templates/`.
 
 ### Cho MacOS / Linux:
 ```bash

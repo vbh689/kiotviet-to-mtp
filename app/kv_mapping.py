@@ -20,6 +20,7 @@ class FieldMapping:
     field: str
     label: str
     targets: tuple[TargetUsage, ...]
+    is_optional: bool = False
 
 
 SOURCE_TYPE_LABELS = {
@@ -78,6 +79,18 @@ MAPPING_METADATA: dict[str, tuple[FieldMapping, ...]] = {
             "ton_kho",
             "Tồn kho",
             (TargetUsage("MTP_SP-TonKhoDauKy.xls", "B", "Số lượng đầu kỳ"),),
+        ),
+        FieldMapping(
+            "ma_dvt_co_ban",
+            "Mã ĐVT Cơ bản",
+            (TargetUsage("MTP_SP-SanPham.xls", "—", "Liên kết ĐVT phụ (nội bộ)"),),
+            is_optional=True,
+        ),
+        FieldMapping(
+            "quy_doi",
+            "Quy đổi",
+            (TargetUsage("MTP_SP-SanPham.xls", "X+", "Quy đổi ĐVT phụ 01–20"),),
+            is_optional=True,
         ),
     ),
     "customer": (
@@ -149,4 +162,4 @@ MAPPING_METADATA: dict[str, tuple[FieldMapping, ...]] = {
 
 
 def required_fields_for(source_type: str) -> tuple[str, ...]:
-    return tuple(item.field for item in MAPPING_METADATA[source_type])
+    return tuple(item.field for item in MAPPING_METADATA[source_type] if not item.is_optional)

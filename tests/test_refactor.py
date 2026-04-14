@@ -374,6 +374,160 @@ class RefactorBehaviorTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0)
         self.assertIn("--kiotviet", result.stdout)
 
+    def test_build_san_pham_merge_dvt_basic(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            template = tmp / "MTP_SP-SanPham.xls"
+            output = tmp / "out.xls"
+
+            write_xls(template, "Sheet1", ["Nhóm hàng hóa"], [])
+            # 1 primary + 2 variants
+            source_rows = [
+                {
+                    "nhom_hang": "Nhóm A",
+                    "ma_hang": "PVN3220",
+                    "ten_hang": "Bài Double K Xịn",
+                    "don_vi_tinh": "Bộ",
+                    "gia_von": "1000",
+                    "gia_ban": "1500",
+                    "ma_dvt_co_ban": "",
+                    "quy_doi": "",
+                },
+                {
+                    "nhom_hang": "Nhóm A",
+                    "ma_hang": "SP001205",
+                    "ten_hang": "Bài Double K Xịn",
+                    "don_vi_tinh": "Cây",
+                    "gia_von": "10000",
+                    "gia_ban": "15000",
+                    "ma_dvt_co_ban": "PVN3220",
+                    "quy_doi": "10",
+                },
+                {
+                    "nhom_hang": "Nhóm A",
+                    "ma_hang": "SP001206",
+                    "ten_hang": "Bài Double K Xịn",
+                    "don_vi_tinh": "Thùng",
+                    "gia_von": "50000",
+                    "gia_ban": "75000",
+                    "ma_dvt_co_ban": "PVN3220",
+                    "quy_doi": "50",
+                },
+            ]
+
+            added = build_san_pham(template, output, source_rows, merge_dvt=True)
+
+            headers, rows = read_xls_rows(output)
+            self.assertEqual(added, 1)  # Only 1 output row
+            self.assertEqual(len(rows), 1)
+            # Slot 01: W(22)=Cây, X(23)=10, Y(24)=15000
+            self.assertEqual(rows[0][22], "Cây")
+            self.assertEqual(rows[0][23], 10.0)
+            self.assertEqual(rows[0][24], 15000.0)
+            # Slot 02: Z(25)=Thùng, AA(26)=50, AB(27)=75000
+            self.assertEqual(rows[0][25], "Thùng")
+            self.assertEqual(rows[0][26], 50.0)
+            self.assertEqual(rows[0][27], 75000.0)
+
+    def test_build_san_pham_merge_dvt_no_variants(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            template = tmp / "MTP_SP-SanPham.xls"
+            output = tmp / "out.xls"
+
+            write_xls(template, "Sheet1", ["Nhóm hàng hóa"], [])
+            source_rows = [
+                {
+                    "nhom_hang": "Nhóm B",
+                    "ma_hang": "SP001",
+                    "ten_hang": "Sản phẩm 1",
+                    "don_vi_tinh": "Cái",
+                    "gia_von": "100",
+                    "gia_ban": "200",
+                    "ma_dvt_co_ban": "",
+                    "quy_doi": "",
+                }
+            ]
+
+            added = build_san_pham(template, output, source_rows, merge_dvt=True)
+
+            headers, rows = read_xls_rows(output)
+            self.assertEqual(added, 1)
+            self.assertEqual(len(rows), 1)
+            self.assertTrue(len(rows[0]) >= 9)  # xlrd may strip trailing empty cells
+            self.assertEqual(rows[0][1], "SP001")
+
+    def test_build_san_pham_merge_dvt_off(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            template = tmp / "MTP_SP-SanPham.xls"
+            output = tmp / "out.xls"
+
+            write_xls(template, "Sheet1", ["Nhóm hàng hóa"], [])
+            source_rows = [
+                {
+                    "nhom_hang": "Nhóm A",
+                    "ma_hang": "PVN3220",
+                    "ten_hang": "Bài Double K Xịn",
+                    "don_vi_tinh": "Bộ",
+                    "gia_von": "1000",
+                    "gia_ban": "1500",
+                    "ma_dvt_co_ban": "",
+                    "quy_doi": "",
+                },
+                {
+                    "nhom_hang": "Nhóm A",
+                    "ma_hang": "SP001205",
+                    "ten_hang": "Bài Double K Xịn",
+                    "don_vi_tinh": "Cây",
+                    "gia_von": "10000",
+                    "gia_ban": "15000",
+                    "ma_dvt_co_ban": "PVN3220",
+                    "quy_doi": "10",
+                },
+            ]
+
+            added = build_san_pham(template, output, source_rows, merge_dvt=False)
+
+            headers, rows = read_xls_rows(output)
+            self.assertEqual(added, 2)
+            self.assertEqual(len(rows), 2)
+            self.assertEqual(rows[0][1], "PVN3220")
+            self.assertEqual(rows[1][1], "SP001205")
+
+    def test_ton_kho_excludes_variants_when_merge_dvt(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            template = tmp / "MTP_SP-TonKhoDauKy.xls"
+            output = tmp / "out.xls"
+
+            write_xls(template, "Sheet1", ["Mã sản phẩm"], [])
+            source_rows = [
+                {"ma_hang": "MAIN", "ton_kho": "10", "gia_von": "100"},
+                {"ma_hang": "VARIANT1", "ton_kho": "5", "gia_von": "50"},
+            ]
+
+            added = build_ton_kho_dau_ky(template, output, source_rows, merge_dvt=True, variant_codes={"VARIANT1"})
+
+            headers, rows = read_xls_rows(output)
+            self.assertEqual(added, 1)
+            self.assertEqual(len(rows), 1)
+            self.assertEqual(rows[0][0], "MAIN")
+
+    def test_optional_columns_missing_no_error(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "DanhSachSanPham_missing_optional.xlsx"
+            write_xlsx(
+                path,
+                ["Loại hàng", "Nhóm hàng", "Mã hàng", "Tên hàng", "Giá bán", "Giá vốn", "Tồn kho", "ĐVT"],
+                [["Loại 1", "Nhóm 1", "SP01", "Tên 1", 200, 100, 10, "Cái"]],
+            )
+
+            _, rows = read_kiotviet_rows(path)
+            self.assertEqual(rows[0]["ma_hang"], "SP01")
+            self.assertIsNone(rows[0].get("ma_dvt_co_ban"))
+            self.assertIsNone(rows[0].get("quy_doi"))
+
 
 if __name__ == "__main__":
     unittest.main()

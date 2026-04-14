@@ -18,6 +18,11 @@ PRODUCT_HEADER_ALIASES = {
     "don_vi_tinh": ["ĐVT", "Đơn vị tính"],
 }
 
+PRODUCT_OPTIONAL_HEADER_ALIASES = {
+    "ma_dvt_co_ban": ["Mã ĐVT Cơ bản", "Mã ĐVT cơ bản"],
+    "quy_doi": ["Quy đổi"],
+}
+
 CUSTOMER_HEADER_ALIASES = {
     "ma_khach_hang": ["Mã khách hàng"],
     "ten_khach_hang": ["Tên khách hàng"],

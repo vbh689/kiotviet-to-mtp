@@ -120,6 +120,11 @@ def parse_args() -> argparse.Namespace:
         default=get_default_outdir(),
         help="Thư mục xuất file (mặc định: ./output)",
     )
+    parser.add_argument(
+        "--merge-dvt",
+        action="store_true",
+        help="Gộp các dòng sản phẩm cùng tên khác ĐVT thành các cột ĐVT phụ",
+    )
     return parser.parse_args()
 
 
@@ -127,6 +132,7 @@ def convert_kiotviet_files(
     source_paths: list[Path],
     outdir: Path,
     column_mappings: ColumnMappings | None = None,
+    merge_dvt: bool = False,
 ) -> int:
     # Shared conversion flow:
     # 1. read and classify each source file
@@ -220,8 +226,19 @@ def convert_kiotviet_files(
         mtp_sanpham = resolved_templates["product_sanpham"]
         ton_kho_dau_ky = resolved_templates["product_tonkho"]
 
-        loai_hang_values = [clean_text(r["loai_hang"]) for r in product_rows]
-        nhom_hang_values = [clean_text(r["nhom_hang"]) for r in product_rows]
+        variant_codes = set()
+        if merge_dvt:
+            variant_codes = {
+                clean_text(r["ma_hang"])
+                for r in product_rows
+                if clean_text(r.get("ma_dvt_co_ban", "")) != ""
+            }
+            loai_hang_values = [clean_text(r["loai_hang"]) for r in product_rows if clean_text(r.get("ma_dvt_co_ban", "")) == ""]
+            nhom_hang_values = [clean_text(r["nhom_hang"]) for r in product_rows if clean_text(r.get("ma_dvt_co_ban", "")) == ""]
+        else:
+            loai_hang_values = [clean_text(r["loai_hang"]) for r in product_rows]
+            nhom_hang_values = [clean_text(r["nhom_hang"]) for r in product_rows]
+
         nganh_headers, nganh_existing = read_xls_rows(mtp_nganh)
         nhom_headers, nhom_existing = read_xls_rows(mtp_nhom)
         nganh_rows = build_nganh_hang(loai_hang_values, nganh_existing)
@@ -244,8 +261,8 @@ def convert_kiotviet_files(
             nhom_headers or ["Mã nhóm", "Tên nhóm", "Ngành hàng", "Ghi chú"],
             nhom_rows,
         )
-        san_pham_added = build_san_pham(mtp_sanpham, out_sanpham, product_rows)
-        ton_kho_added = build_ton_kho_dau_ky(ton_kho_dau_ky, out_ton_kho, product_rows)
+        san_pham_added = build_san_pham(mtp_sanpham, out_sanpham, product_rows, merge_dvt=merge_dvt)
+        ton_kho_added = build_ton_kho_dau_ky(ton_kho_dau_ky, out_ton_kho, product_rows, merge_dvt=merge_dvt, variant_codes=variant_codes)
 
         print(f"Đã xuất: {out_nganh}")
         print(f"Đã xuất: {out_nhom}")
@@ -305,4 +322,4 @@ def main() -> int:
             print("Chạy `pip install PyQt6` để cài đặt giao diện, hoặc truyền đối số `--kiotviet` để chạy giao diện dòng lệnh.", file=sys.stderr)
             return 1
 
-    return convert_kiotviet_files(args.kiotviet, args.outdir)
+    return convert_kiotviet_files(args.kiotviet, args.outdir, merge_dvt=args.merge_dvt)

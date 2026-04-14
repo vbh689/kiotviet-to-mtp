@@ -127,6 +127,8 @@ def build_san_pham(
         row[6] = to_number(item["gia_ban"])
         row[7] = 0
         row[8] = 999999
+        if item.get("ma_vach"):
+            row[12] = clean_text(item.get("ma_vach", ""))
 
         if merge_dvt:
             variants = variants_by_parent.get(ma_hang, [])

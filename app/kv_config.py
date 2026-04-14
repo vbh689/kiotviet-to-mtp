@@ -21,6 +21,7 @@ PRODUCT_HEADER_ALIASES = {
 PRODUCT_OPTIONAL_HEADER_ALIASES = {
     "ma_dvt_co_ban": ["Mã ĐVT Cơ bản", "Mã ĐVT cơ bản"],
     "quy_doi": ["Quy đổi"],
+    "ma_vach": ["Mã vạch"],
 }
 
 CUSTOMER_HEADER_ALIASES = {

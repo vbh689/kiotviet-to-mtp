@@ -27,7 +27,7 @@ from .kv_config import (
     PRODUCT_HEADER_ALIASES,
     PROVIDER_HEADER_ALIASES,
 )
-from .kv_excel import read_xlsx_headers, resolve_alias_columns
+from .kv_excel import read_excel_headers, resolve_alias_columns
 from .kv_mapping import ColumnMappings, MAPPING_METADATA, SOURCE_TYPE_LABELS
 from .kv_runner import convert_kiotviet_files, detect_source_type, get_default_outdir
 from .kv_utils import clean_text, excel_column_letter
@@ -215,7 +215,7 @@ class DragDropArea(QLabel):
 
     def __init__(self):
         super().__init__()
-        self.setText("Kéo thả hoặc click vào đây để chọn file Excel KiotViet (.xlsx)\n\n(DanhSachSanPham..., DanhSachKhachHang..., DanhSachNhaCungCap...)")
+        self.setText("Kéo thả hoặc click vào đây để chọn file Excel KiotViet (.xlsx, .xls)\n\n(DanhSachSanPham..., DanhSachKhachHang..., DanhSachNhaCungCap...)")
         self.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.setStyleSheet("""
             QLabel {
@@ -235,7 +235,7 @@ class DragDropArea(QLabel):
                 self,
                 "Chọn file Excel KiotViet",
                 "",
-                "Excel Files (*.xlsx)"
+                "Excel Files (*.xlsx *.xls)"
             )
             if files:
                 self.files_dropped.emit(files)
@@ -329,19 +329,19 @@ class MainWindow(QMainWindow):
         self.worker = None
 
     def process_files(self, files):
-        # Filter for .xlsx
-        xlsx_files = [f for f in files if f.lower().endswith('.xlsx')]
-        if not xlsx_files:
-            self.log_output.append(">>> Không tìm thấy file .xlsx nào trong danh sách được thả.\n")
+        # Filter for .xlsx and .xls
+        excel_files = [f for f in files if f.lower().endswith(('.xlsx', '.xls'))]
+        if not excel_files:
+            self.log_output.append(">>> Không tìm thấy file .xlsx hay .xls nào trong danh sách được thả.\n")
             return
             
-        self.log_output.append(f">>> Đang xử lý {len(xlsx_files)} file...")
-        for f in xlsx_files:
+        self.log_output.append(f">>> Đang xử lý {len(excel_files)} file...")
+        for f in excel_files:
             self.log_output.append(f" - {os.path.basename(f)}")
         self.log_output.append("")
 
         try:
-            grouped = self.prepare_mapping_context(xlsx_files)
+            grouped = self.prepare_mapping_context(excel_files)
         except ValueError as exc:
             self.log_output.append(f">>> Lỗi: {exc}\n")
             QMessageBox.warning(self, "Không thể đọc file", str(exc))
@@ -354,7 +354,7 @@ class MainWindow(QMainWindow):
         
         # Disable drop area while processing
         self.drop_area.setAcceptDrops(False)
-        self.worker = ConversionWorker(xlsx_files, dialog.column_mappings(), merge_dvt=self.merge_dvt_checkbox.isChecked())
+        self.worker = ConversionWorker(excel_files, dialog.column_mappings(), merge_dvt=self.merge_dvt_checkbox.isChecked())
         self.worker.result_ready.connect(self.on_processing_finished)
         self.worker.start()
 
@@ -362,7 +362,7 @@ class MainWindow(QMainWindow):
         grouped: dict[str, list[SourceFileInfo]] = {}
         for file in files:
             path = Path(file)
-            headers = read_xlsx_headers(path)
+            headers = read_excel_headers(path)
             source_type = detect_source_type(path, headers)
             grouped.setdefault(source_type, []).append(
                 SourceFileInfo(path=path, source_type=source_type, headers=headers)

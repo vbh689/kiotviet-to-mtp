@@ -29,7 +29,7 @@ from .kv_excel import (
     read_kiotviet_rows,
     read_provider_rows,
     read_xls_rows,
-    read_xlsx_headers,
+    read_excel_headers,
     write_xls,
 )
 from .kv_mapping import ColumnMappings
@@ -112,7 +112,7 @@ def parse_args() -> argparse.Namespace:
         required=False,
         nargs="+",
         type=Path,
-        help="Một hoặc nhiều file Excel KiotViet .xlsx (Bỏ trống để mở chế độ giao diện GUI)",
+        help="Một hoặc nhiều file Excel KiotViet .xlsx / .xls (Bỏ trống để mở chế độ giao diện GUI)",
     )
     parser.add_argument(
         "--outdir",
@@ -154,7 +154,7 @@ def convert_kiotviet_files(
 
         source_type = "unknown"
         try:
-            headers = read_xlsx_headers(source_path)
+            headers = read_excel_headers(source_path)
             source_type = detect_source_type(source_path, headers)
             selected_mapping = None
             if column_mappings is not None:

@@ -101,8 +101,13 @@ def validate_explicit_columns(
     return resolved
 
 
-def read_xlsx_headers(path: Path) -> list[str]:
+def read_excel_headers(path: Path) -> list[str]:
     # Read only the first row to detect the source type quickly.
+    if path.suffix.lower() == '.xls':
+        book = xlrd.open_workbook(path)
+        sheet = book.sheet_by_index(0)
+        return [clean_text(c) for c in sheet.row_values(0)] if sheet.nrows > 0 else []
+
     wb = load_workbook(path, data_only=True, read_only=True)
     try:
         ws = wb.active
@@ -111,7 +116,7 @@ def read_xlsx_headers(path: Path) -> list[str]:
         wb.close()
 
 
-def read_mapped_xlsx_rows(
+def read_mapped_excel_rows(
     path: Path,
     aliases_map: dict[str, list[str]],
     source_label: str,
@@ -121,10 +126,19 @@ def read_mapped_xlsx_rows(
 ) -> tuple[list[str], list[dict[str, object]]]:
     # Read a KiotViet sheet and return rows keyed by our internal field names.
     # Blank data rows are skipped based on the important identifying columns.
-    wb = load_workbook(path, data_only=True)
-    try:
+    is_xls = path.suffix.lower() == '.xls'
+    if is_xls:
+        book = xlrd.open_workbook(path)
+        sheet = book.sheet_by_index(0)
+        headers = [clean_text(c) for c in sheet.row_values(0)] if sheet.nrows > 0 else []
+        wb = None
+        ws = None
+    else:
+        wb = load_workbook(path, data_only=True)
         ws = wb.active
         headers = [clean_text(c.value) for c in ws[1]]
+
+    try:
         columns = resolve_columns(headers, aliases_map, source_label, column_mapping)
         optional_columns = {}
         if optional_aliases_map:
@@ -139,24 +153,42 @@ def read_mapped_xlsx_rows(
 
         rows: list[dict[str, object]] = []
 
-        for row_idx in range(2, ws.max_row + 1):
-            row = {
-                field: ws.cell(row_idx, col_idx).value
-                for field, col_idx in columns.items()
-            }
-            if all(clean_text(row[field]) == "" for field in key_fields):
-                continue
+        if is_xls:
+            for row_idx in range(1, sheet.nrows):
+                row_data = sheet.row_values(row_idx)
+                row = {
+                    field: row_data[col_idx - 1] if (col_idx - 1) < len(row_data) else None
+                    for field, col_idx in columns.items()
+                }
+                if all(clean_text(row[field]) == "" for field in key_fields):
+                    continue
 
-            if optional_aliases_map:
-                for field in optional_aliases_map:
-                    col_idx = optional_columns.get(field)
-                    row[field] = ws.cell(row_idx, col_idx).value if col_idx else None
+                if optional_aliases_map:
+                    for field in optional_aliases_map:
+                        col_idx = optional_columns.get(field)
+                        row[field] = row_data[col_idx - 1] if col_idx and (col_idx - 1) < len(row_data) else None
 
-            rows.append(row)
+                rows.append(row)
+        else:
+            for row_idx in range(2, ws.max_row + 1):
+                row = {
+                    field: ws.cell(row_idx, col_idx).value
+                    for field, col_idx in columns.items()
+                }
+                if all(clean_text(row[field]) == "" for field in key_fields):
+                    continue
+
+                if optional_aliases_map:
+                    for field in optional_aliases_map:
+                        col_idx = optional_columns.get(field)
+                        row[field] = ws.cell(row_idx, col_idx).value if col_idx else None
+
+                rows.append(row)
 
         return headers, rows
     finally:
-        wb.close()
+        if wb:
+            wb.close()
 
 
 def read_kiotviet_rows(
@@ -164,7 +196,7 @@ def read_kiotviet_rows(
     column_mapping: Mapping[str, int] | None = None,
 ) -> tuple[list[str], list[dict[str, object]]]:
     # Thin wrappers keep the per-source configuration close to the call site.
-    return read_mapped_xlsx_rows(
+    return read_mapped_excel_rows(
         path,
         PRODUCT_HEADER_ALIASES,
         "KiotViet sản phẩm",
@@ -178,7 +210,7 @@ def read_customer_rows(
     path: Path,
     column_mapping: Mapping[str, int] | None = None,
 ) -> tuple[list[str], list[dict[str, object]]]:
-    return read_mapped_xlsx_rows(
+    return read_mapped_excel_rows(
         path,
         CUSTOMER_HEADER_ALIASES,
         "KiotViet khách hàng",
@@ -191,7 +223,7 @@ def read_provider_rows(
     path: Path,
     column_mapping: Mapping[str, int] | None = None,
 ) -> tuple[list[str], list[dict[str, object]]]:
-    return read_mapped_xlsx_rows(
+    return read_mapped_excel_rows(
         path,
         PROVIDER_HEADER_ALIASES,
         "KiotViet nhà cung cấp",

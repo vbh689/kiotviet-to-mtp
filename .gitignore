@@ -10,7 +10,13 @@ __pycache__/
 .Python
 build/
 develop-eggs/
-dist/
+### app-specific exclusion for builds
+dist/*
+!dist/
+!dist/toMTP_windows.zip
+!dist/toMTP_linux.zip
+!dist/toMTP_macos.zip
+### app-specific exclusion for builds
 downloads/
 eggs/
 .eggs/

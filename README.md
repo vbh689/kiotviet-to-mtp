@@ -73,12 +73,12 @@ Có thể đóng gói toàn bộ chương trình thành ứng dụng (bao gồm 
 
 ### Cho MacOS / Linux:
 ```bash
-pyinstaller --noconfirm --clean --windowed --onedir --add-data "templates:templates" --name "toMTP" kiotviet_to_mtp.py
+pyinstaller --noconfirm --clean --windowed --onedir --add-data "templates:templates" --name "toMTP_linux" kiotviet_to_mtp.py
 ```
 > Lưu ý: dấu ngăn cách trong `--add-data` của MacOS là dấu hai chấm `:`. File đầu ra nằm ở `dist/kiotviet_to_mtp`.
 
 ### Cho Windows:
 ```bash
-pyinstaller --noconfirm --clean --windowed --onedir --add-data "templates;templates" --name "toMTP" kiotviet_to_mtp.py
+pyinstaller --noconfirm --clean --windowed --onedir --add-data "templates;templates" --name "toMTP_windows" kiotviet_to_mtp.py
 ```
 > Lưu ý: dấu ngăn cách trong `--add-data` của Windows là dấu chấm phẩy `;`. Mục chạy nằm ở `dist\kiotviet_to_mtp\kiotviet_to_mtp.exe`.

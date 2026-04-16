@@ -5,6 +5,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TypeAlias
 
+from .kv_config import (
+    CUSTOMER_HEADER_ALIASES,
+    PRODUCT_HEADER_ALIASES,
+    PRODUCT_OPTIONAL_HEADER_ALIASES,
+    PROVIDER_HEADER_ALIASES,
+)
+
 ColumnMappings: TypeAlias = dict[str, dict[str, int]]
 
 
@@ -27,6 +34,15 @@ SOURCE_TYPE_LABELS = {
     "product": "Sản phẩm",
     "customer": "Khách hàng",
     "provider": "Nhà cung cấp",
+}
+
+DEFAULT_MAPPING_ALIASES_BY_SOURCE_TYPE = {
+    "product": {
+        **PRODUCT_HEADER_ALIASES,
+        **PRODUCT_OPTIONAL_HEADER_ALIASES,
+    },
+    "customer": CUSTOMER_HEADER_ALIASES,
+    "provider": PROVIDER_HEADER_ALIASES,
 }
 
 MAPPING_METADATA: dict[str, tuple[FieldMapping, ...]] = {

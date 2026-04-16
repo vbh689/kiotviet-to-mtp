@@ -22,22 +22,15 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt, pyqtSignal, QThread
 
-from .kv_config import (
-    CUSTOMER_HEADER_ALIASES,
-    PRODUCT_HEADER_ALIASES,
-    PROVIDER_HEADER_ALIASES,
-)
 from .kv_excel import read_excel_headers, resolve_alias_columns
-from .kv_mapping import ColumnMappings, MAPPING_METADATA, SOURCE_TYPE_LABELS
+from .kv_mapping import (
+    ColumnMappings,
+    DEFAULT_MAPPING_ALIASES_BY_SOURCE_TYPE,
+    MAPPING_METADATA,
+    SOURCE_TYPE_LABELS,
+)
 from .kv_runner import convert_kiotviet_files, detect_source_type, get_default_outdir
 from .kv_utils import clean_text, excel_column_letter
-
-
-ALIASES_BY_SOURCE_TYPE = {
-    "product": PRODUCT_HEADER_ALIASES,
-    "customer": CUSTOMER_HEADER_ALIASES,
-    "provider": PROVIDER_HEADER_ALIASES,
-}
 
 
 @dataclass(frozen=True)
@@ -111,7 +104,10 @@ class ColumnMappingDialog(QDialog):
         layout.setColumnStretch(2, 2)
 
         first = infos[0]
-        default_columns = resolve_alias_columns(first.headers, ALIASES_BY_SOURCE_TYPE[source_type])
+        default_columns = resolve_alias_columns(
+            first.headers,
+            DEFAULT_MAPPING_ALIASES_BY_SOURCE_TYPE[source_type],
+        )
         self.combos[source_type] = {}
 
         file_names = ", ".join(info.path.name for info in infos)

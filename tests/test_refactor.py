@@ -12,8 +12,8 @@ from openpyxl import Workbook
 
 from app.kv_builders import build_kh_ncc, build_san_pham, build_ton_kho_dau_ky
 from app.kv_config import PRODUCT_HEADER_ALIASES
-from app.kv_excel import read_kiotviet_rows, read_xls_rows, resolve_columns, write_xls
-from app.kv_mapping import ColumnMappings
+from app.kv_excel import read_kiotviet_rows, read_xls_rows, resolve_alias_columns, resolve_columns, write_xls
+from app.kv_mapping import ColumnMappings, DEFAULT_MAPPING_ALIASES_BY_SOURCE_TYPE
 from app.kv_runner import convert_kiotviet_files, detect_source_type, resolve_template_path
 
 
@@ -86,6 +86,27 @@ class RefactorBehaviorTests(unittest.TestCase):
             self.assertEqual(rows[0]["ten_hang"], "Tên chọn")
             self.assertEqual(rows[0]["nhom_hang"], "Nhóm chọn")
             self.assertEqual(rows[0]["gia_von"], 700)
+
+    def test_default_mapping_aliases_include_product_optional_columns(self):
+        headers = [
+            "Loại hàng",
+            "Nhóm hàng",
+            "Mã hàng",
+            "Tên hàng",
+            "Giá bán",
+            "Giá vốn",
+            "Tồn kho",
+            "ĐVT",
+            "Mã ĐVT cơ bản",
+            "Quy đổi",
+            "Mã vạch",
+        ]
+
+        columns = resolve_alias_columns(headers, DEFAULT_MAPPING_ALIASES_BY_SOURCE_TYPE["product"])
+
+        self.assertEqual(columns["ma_dvt_co_ban"], 9)
+        self.assertEqual(columns["quy_doi"], 10)
+        self.assertEqual(columns["ma_vach"], 11)
 
     def test_explicit_mapping_reports_missing_and_invalid_columns(self):
         headers = ["Mã custom"]

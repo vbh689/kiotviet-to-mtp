@@ -399,8 +399,9 @@ class RefactorBehaviorTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0)
         self.assertIn("--kiotviet", result.stdout)
+        self.assertNotIn("--merge-dvt", result.stdout)
 
-    def test_build_san_pham_merge_dvt_basic(self):
+    def test_build_san_pham_merges_variants_by_default(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp = Path(tmpdir)
             template = tmp / "MTP_SP-SanPham.xls"
@@ -441,7 +442,7 @@ class RefactorBehaviorTests(unittest.TestCase):
                 },
             ]
 
-            added = build_san_pham(template, output, source_rows, merge_dvt=True)
+            added = build_san_pham(template, output, source_rows)
 
             headers, rows = read_xls_rows(output)
             self.assertEqual(added, 1)  # Only 1 output row
@@ -455,7 +456,7 @@ class RefactorBehaviorTests(unittest.TestCase):
             self.assertEqual(rows[0][26], 50.0)
             self.assertEqual(rows[0][27], 75000.0)
 
-    def test_build_san_pham_merge_dvt_no_variants(self):
+    def test_build_san_pham_handles_no_variants_by_default(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp = Path(tmpdir)
             template = tmp / "MTP_SP-SanPham.xls"
@@ -475,7 +476,7 @@ class RefactorBehaviorTests(unittest.TestCase):
                 }
             ]
 
-            added = build_san_pham(template, output, source_rows, merge_dvt=True)
+            added = build_san_pham(template, output, source_rows)
 
             headers, rows = read_xls_rows(output)
             self.assertEqual(added, 1)
@@ -483,7 +484,7 @@ class RefactorBehaviorTests(unittest.TestCase):
             self.assertTrue(len(rows[0]) >= 9)  # xlrd may strip trailing empty cells
             self.assertEqual(rows[0][1], "SP001")
 
-    def test_build_san_pham_merge_dvt_off(self):
+    def test_build_san_pham_skips_orphan_variants_by_default(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp = Path(tmpdir)
             template = tmp / "MTP_SP-SanPham.xls"
@@ -491,16 +492,6 @@ class RefactorBehaviorTests(unittest.TestCase):
 
             write_xls(template, "Sheet1", ["Nhóm hàng hóa"], [])
             source_rows = [
-                {
-                    "nhom_hang": "Nhóm A",
-                    "ma_hang": "PVN3220",
-                    "ten_hang": "Bài Double K Xịn",
-                    "don_vi_tinh": "Bộ",
-                    "gia_von": "1000",
-                    "gia_ban": "1500",
-                    "ma_dvt_co_ban": "",
-                    "quy_doi": "",
-                },
                 {
                     "nhom_hang": "Nhóm A",
                     "ma_hang": "SP001205",
@@ -513,15 +504,13 @@ class RefactorBehaviorTests(unittest.TestCase):
                 },
             ]
 
-            added = build_san_pham(template, output, source_rows, merge_dvt=False)
+            added = build_san_pham(template, output, source_rows)
 
             headers, rows = read_xls_rows(output)
-            self.assertEqual(added, 2)
-            self.assertEqual(len(rows), 2)
-            self.assertEqual(rows[0][1], "PVN3220")
-            self.assertEqual(rows[1][1], "SP001205")
+            self.assertEqual(added, 0)
+            self.assertEqual(len(rows), 0)
 
-    def test_ton_kho_excludes_variants_when_merge_dvt(self):
+    def test_ton_kho_excludes_variants_by_default(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             tmp = Path(tmpdir)
             template = tmp / "MTP_SP-TonKhoDauKy.xls"
@@ -529,16 +518,61 @@ class RefactorBehaviorTests(unittest.TestCase):
 
             write_xls(template, "Sheet1", ["Mã sản phẩm"], [])
             source_rows = [
-                {"ma_hang": "MAIN", "ton_kho": "10", "gia_von": "100"},
-                {"ma_hang": "VARIANT1", "ton_kho": "5", "gia_von": "50"},
+                {"ma_hang": "MAIN", "ton_kho": "10", "gia_von": "100", "ma_dvt_co_ban": ""},
+                {"ma_hang": "VARIANT1", "ton_kho": "5", "gia_von": "50", "ma_dvt_co_ban": "MAIN"},
             ]
 
-            added = build_ton_kho_dau_ky(template, output, source_rows, merge_dvt=True, variant_codes={"VARIANT1"})
+            added = build_ton_kho_dau_ky(template, output, source_rows)
 
             headers, rows = read_xls_rows(output)
             self.assertEqual(added, 1)
             self.assertEqual(len(rows), 1)
             self.assertEqual(rows[0][0], "MAIN")
+
+    def test_conversion_merges_variants_by_default(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            tmp = Path(tmpdir)
+            source = tmp / "DanhSachSanPham_multi_dvt.xlsx"
+            outdir = tmp / "output"
+            write_xlsx(
+                source,
+                [
+                    "Loại hàng",
+                    "Nhóm hàng",
+                    "Mã hàng",
+                    "Tên hàng",
+                    "Giá bán",
+                    "Giá vốn",
+                    "Tồn kho",
+                    "ĐVT",
+                    "Mã ĐVT cơ bản",
+                    "Quy đổi",
+                ],
+                [
+                    ["Loại chính", "Nhóm chính", "MAIN", "Sản phẩm chính", 1500, 1000, 10, "Cái", "", ""],
+                    ["Loại biến thể", "Nhóm biến thể", "VARIANT1", "Sản phẩm biến thể", 12000, 9000, 4, "Thùng", "MAIN", 12],
+                ],
+            )
+
+            code = run_conversion_quietly([source], outdir)
+
+            self.assertEqual(code, 0)
+            _, product_rows = read_xls_rows(outdir / "MTP_SP-SanPham.xls")
+            _, stock_rows = read_xls_rows(outdir / "MTP_SP-TonKhoDauKy.xls")
+            _, nganh_rows = read_xls_rows(outdir / "MTP_SP-NganhHang-LoaiHang.xls")
+            _, nhom_rows = read_xls_rows(outdir / "MTP_SP-NhomHang.xls")
+            product = find_row(product_rows, 1, "MAIN")
+            self.assertEqual(product[22], "Thùng")
+            self.assertEqual(product[23], 12.0)
+            self.assertEqual(product[24], 12000.0)
+            with self.assertRaises(AssertionError):
+                find_row(product_rows, 1, "VARIANT1")
+            with self.assertRaises(AssertionError):
+                find_row(stock_rows, 0, "VARIANT1")
+            with self.assertRaises(AssertionError):
+                find_row(nganh_rows, 1, "Loại biến thể")
+            with self.assertRaises(AssertionError):
+                find_row(nhom_rows, 1, "Nhóm biến thể")
 
     def test_optional_columns_missing_no_error(self):
         with tempfile.TemporaryDirectory() as tmpdir:

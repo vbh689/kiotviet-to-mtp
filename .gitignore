@@ -111,3 +111,9 @@ dmypy.json
 
 # Project specific
 output/*
+/.agents/
+/*.xls
+/*.xlsx
+/*PLAN.md
+/*TODO.md
+/AGENTS.md

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import contextlib
 import io
+import os
 import subprocess
 import sys
 import tempfile
@@ -385,11 +386,15 @@ class RefactorBehaviorTests(unittest.TestCase):
 
     def test_cli_wrapper_keeps_original_entrypoint(self):
         repo_root = Path(__file__).resolve().parents[1]
+        env = dict(os.environ)
+        env["PYTHONIOENCODING"] = "cp1252"
         result = subprocess.run(
             [sys.executable, "kiotviet_to_mtp.py", "--help"],
             cwd=repo_root,
+            env=env,
             capture_output=True,
             text=True,
+            encoding="utf-8",
             check=False,
         )
         self.assertEqual(result.returncode, 0)

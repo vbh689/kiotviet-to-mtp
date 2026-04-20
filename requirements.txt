@@ -1,0 +1,5 @@
+xlrd
+xlwt
+openpyxl
+PyQt6
+pyinstaller

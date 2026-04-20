@@ -6,7 +6,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from PyQt6.QtWidgets import (
     QApplication,
-    QCheckBox,
     QComboBox,
     QDialog,
     QDialogButtonBox,
@@ -50,14 +49,13 @@ def run_gui_conversion(
     files: list[str],
     column_mappings: ColumnMappings,
     output_dir: str | None = None,
-    merge_dvt: bool = False,
 ) -> str:
     outdir = Path(output_dir) if output_dir else get_default_outdir()
 
     f = io.StringIO()
     try:
         with contextlib.redirect_stdout(f), contextlib.redirect_stderr(f):
-            convert_kiotviet_files([Path(file) for file in files], outdir, column_mappings, merge_dvt=merge_dvt)
+            convert_kiotviet_files([Path(file) for file in files], outdir, column_mappings)
     except Exception as e:
         import traceback
         f.write(traceback.format_exc())
@@ -195,14 +193,13 @@ class ColumnMappingDialog(QDialog):
 class ConversionWorker(QThread):
     result_ready = pyqtSignal(str)
 
-    def __init__(self, files, column_mappings: ColumnMappings, merge_dvt: bool = False):
+    def __init__(self, files, column_mappings: ColumnMappings):
         super().__init__()
         self.files = files
         self.column_mappings = column_mappings
-        self.merge_dvt = merge_dvt
 
     def run(self):
-        output = run_gui_conversion(self.files, self.column_mappings, merge_dvt=self.merge_dvt)
+        output = run_gui_conversion(self.files, self.column_mappings)
         self.result_ready.emit(output)
 
 
@@ -304,10 +301,6 @@ class MainWindow(QMainWindow):
         
         layout.addWidget(self.drop_area, stretch=1)
 
-        self.merge_dvt_checkbox = QCheckBox("Gộp ĐVT phụ (Multi-ĐVT)")
-        self.merge_dvt_checkbox.setToolTip("Khi bật, các dòng sản phẩm có cùng tên nhưng khác ĐVT sẽ được gộp thành ĐVT phụ trên cùng một dòng sản phẩm.")
-        layout.addWidget(self.merge_dvt_checkbox)
-
         self.log_output = QTextEdit()
         self.log_output.setReadOnly(True)
         self.log_output.setStyleSheet("""
@@ -350,7 +343,7 @@ class MainWindow(QMainWindow):
         
         # Disable drop area while processing
         self.drop_area.setAcceptDrops(False)
-        self.worker = ConversionWorker(excel_files, dialog.column_mappings(), merge_dvt=self.merge_dvt_checkbox.isChecked())
+        self.worker = ConversionWorker(excel_files, dialog.column_mappings())
         self.worker.result_ready.connect(self.on_processing_finished)
         self.worker.start()
 

@@ -40,6 +40,8 @@ Trong GUI:
 3. Đổi cột nguồn nếu file KiotViet của bạn đổi tên tiêu đề hoặc sắp xếp lại cột.
 4. Bấm OK để chuyển đổi. Mọi mapping tùy chỉnh chỉ áp dụng cho lần chạy hiện tại và không được lưu.
 
+Với file sản phẩm, các dòng có `Mã ĐVT cơ bản` luôn được gộp thành ĐVT phụ của sản phẩm chính tương ứng. Không cần bật thêm tùy chọn nào.
+
 Hoặc chạy dòng lệnh (CLI) tự động với một hoặc nhiều file KiotViet:
 
 ```bash
